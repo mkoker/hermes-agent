@@ -288,6 +288,70 @@
     }, [missions]);
   }
 
+  function useKanban() {
+    const [data, setData] = useState({ cards: [], loading: true, error: null });
+    const refresh = useCallback(function () {
+      api("/kanban/cards").then(function (cards) {
+        setData({ cards: cards || [], loading: false, error: null });
+      }).catch(function (err) {
+        setData(function (d) { return { cards: d.cards, loading: false, error: err }; });
+      });
+    }, []);
+    useEffect(function () {
+      const unsub = subscribePoll(POLL.tickfile, refresh, true); // 3s — kanban needs to feel live
+      return unsub;
+    }, [refresh]);
+
+    const create = useCallback(function (title, tag) {
+      return api("/kanban/cards", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ title: title, tag: tag || null }),
+      }).then(function (r) { refresh(); return r; });
+    }, [refresh]);
+
+    const update = useCallback(function (id, patch) {
+      return api("/kanban/cards/" + encodeURIComponent(id), {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      }).then(function (r) { refresh(); return r; });
+    }, [refresh]);
+
+    const promote = useCallback(function (id) {
+      return api("/kanban/cards/" + encodeURIComponent(id) + "/promote", { method: "POST" })
+        .then(function (r) { refresh(); return r; });
+    }, [refresh]);
+
+    const discard = useCallback(function (id) {
+      return api("/kanban/cards/" + encodeURIComponent(id), { method: "DELETE" })
+        .then(function (r) { refresh(); return r; });
+    }, [refresh]);
+
+    return { cards: data.cards, loading: data.loading, error: data.error, create: create, update: update, promote: promote, discard: discard, refresh: refresh };
+  }
+
+  function usePmStatus() {
+    const [state, setState] = useState({ data: null, loading: true });
+    useEffect(function () {
+      let cancelled = false;
+      function tick() {
+        api("/pm/status").then(function (data) {
+          if (cancelled) return;
+          setState({ data: data, loading: false });
+        }).catch(function () { if (!cancelled) setState(function (s) { return { data: s.data, loading: false }; }); });
+      }
+      const unsub = subscribePoll(POLL.pmStatus, tick, true);
+      return function () { cancelled = true; unsub(); };
+    }, []);
+
+    const setPaused = useCallback(function (paused) {
+      return api(paused ? "/pm/pause" : "/pm/resume", { method: "POST" });
+    }, []);
+
+    return { data: state.data, loading: state.loading, setPaused: setPaused };
+  }
+
   // ============================================================================
   // 5. PRIMITIVES
   // ============================================================================
