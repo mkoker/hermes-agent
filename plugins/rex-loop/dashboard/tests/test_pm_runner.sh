@@ -20,7 +20,7 @@ cat <<EOM
 mission_name: smoke-pm-test
 max_days: 7
 workspace: /mnt/nvme/smoke-pm-test
-cron_schedule: */30 * * * *
+cron_schedule: "*/30 * * * *"
 needs_review: false
 ---
 # Smoke PM Test

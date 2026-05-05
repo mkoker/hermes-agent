@@ -11,7 +11,7 @@ The document MUST start with YAML frontmatter:
 mission_name: <kebab-case, ≤32 chars, no collision with existing missions>
 max_days: <integer 1–90>
 workspace: </mnt/nvme/... for compute-heavy, /home/ubuntu/projects/... for personal>
-cron_schedule: <cron expression; default "*/30 * * * *">
+cron_schedule: "<cron expression>"  # YAML requires quoting because of leading * (default "*/30 * * * *")
 needs_review: <true|false — true if you couldn't auto-resolve scope>
 ---
 ```
