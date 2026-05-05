@@ -1113,6 +1113,118 @@
     );
   }
 
+  // ---------- KanbanCard ----------
+  function CardInbox(props) {
+    const c = props.card;
+    return React.createElement("div", null,
+      React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.text, fontWeight: 600 } }, c.title),
+      c.tag ? React.createElement("span", {
+        className: "rex-chrome",
+        style: { marginLeft: 8, padding: "1px 6px", borderRadius: 2, background: C.info + "22", color: C.info, fontSize: 9, letterSpacing: "0.15em" },
+      }, c.tag) : null,
+      React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4 } },
+        relTime(c.created_at)),
+    );
+  }
+
+  function CardScoping(props) {
+    const c = props.card;
+    const queuePos = props.queuePos;  // null if currently active in PM, else 1+
+    const purple = C.pmAccent;
+    return React.createElement("div", { className: queuePos == null ? "rex-pulse-yellow" : null },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 6 } },
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.text, fontWeight: 600 } }, c.title),
+        queuePos == null
+          ? React.createElement("span", { className: "rex-chrome", style: { color: purple, fontSize: 9, letterSpacing: "0.2em" } }, "ACTIVE")
+          : React.createElement("span", { className: "rex-chrome", style: { color: C.textDim, fontSize: 9, letterSpacing: "0.2em" } }, "QUEUE #" + queuePos),
+      ),
+      React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4 } },
+        "attempt " + (c.scope_attempts || 0) + " · " + relTime(c.updated_at)),
+    );
+  }
+
+  function CardBacklog(props) {
+    const c = props.card;
+    const onStart = props.onStart, onEdit = props.onEdit, onDiscard = props.onDiscard;
+    const sp = c.spec_summary || {}; // optional rollup the backend may attach (DB1 frontmatter parse)
+    return React.createElement("div", null,
+      React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.text, fontWeight: 600 } }, c.title),
+      c.needs_review ? React.createElement("span", {
+        className: "rex-chrome",
+        style: { marginLeft: 8, padding: "1px 6px", borderRadius: 2, background: C.error + "22", color: C.error, fontSize: 9, letterSpacing: "0.15em" },
+      }, "NEEDS REVIEW") : null,
+      React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4, display: "flex", gap: 12, flexWrap: "wrap" } },
+        sp.tasks_count != null ? React.createElement("span", null, sp.tasks_count + " tasks") : null,
+        sp.phases_count != null ? React.createElement("span", null, sp.phases_count + " phases") : null,
+        sp.max_days != null ? React.createElement("span", null, sp.max_days + "d max") : null,
+        sp.workspace ? React.createElement("span", null, "ws: " + sp.workspace.replace(/^\/home\/ubuntu\//, "~/")) : null,
+      ),
+      React.createElement("div", { style: { display: "flex", gap: 6, marginTop: 8 } },
+        React.createElement(IconButton, { onClick: function () { onStart(c.id); }, style: { borderColor: C.success, color: C.success } }, "START"),
+        React.createElement(IconButton, { onClick: function () { onEdit(c); } }, "EDIT"),
+        React.createElement(IconButton, { onClick: function () { onDiscard(c.id); }, danger: true }, "DISCARD"),
+      ),
+    );
+  }
+
+  function CardActive(props) {
+    const c = props.card;
+    const m = props.mission;
+    const onJump = props.onJump;
+    const isLive = m && m.current_tick && m.current_tick.state === "running";
+    return React.createElement("div", { onClick: function () { if (m) onJump(m.name); }, style: { cursor: m ? "pointer" : "default" } },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" } },
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.text, fontWeight: 600 } }, c.title),
+        m ? React.createElement(StatusPill, { status: isLive ? "running" : m.status }) : React.createElement(StatusPill, { status: "pending" }),
+      ),
+      m
+        ? React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4 } },
+            (m.tick_count || 0) + " ticks" +
+            (m.current_tick ? " · " + (m.current_tick.role || "?") + " " + (m.current_tick.elapsed != null ? fmtDuration(m.current_tick.elapsed) : "") : "") +
+            (m.tokens_today != null ? " · " + fmtTokens(m.tokens_today) + " tok today" : ""))
+        : React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4 } }, "promoting..."),
+    );
+  }
+
+  function CardDone(props) {
+    const c = props.card;
+    const m = props.mission;
+    return React.createElement("div", null,
+      React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.text, fontWeight: 600 } }, c.title),
+      React.createElement("div", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, marginTop: 4, display: "flex", gap: 10, flexWrap: "wrap" } },
+        React.createElement("span", null, m && m.completed_at ? tzFormat(m.completed_at, { month: "short", day: "numeric", timeZoneName: "short" }) : "—"),
+        m && m.tick_count != null ? React.createElement("span", null, m.tick_count + " ticks") : null,
+        m && m.run_seconds != null ? React.createElement("span", null, fmtDuration(m.run_seconds)) : null,
+        m && m.report_path ? React.createElement("a", {
+          href: m.report_path, target: "_blank", style: { color: C.info, textDecoration: "none" },
+        }, "report.md ↗") : null,
+      ),
+    );
+  }
+
+  function KanbanCard(props) {
+    const c = props.card;
+    const accent = (
+      c.status === "scoping" ? C.pmAccent :
+      c.status === "active"  ? C.accent :
+      c.status === "done"    ? C.success :
+      c.status === "backlog" ? C.info :
+      C.border
+    );
+    let body;
+    if (c.status === "inbox")      body = React.createElement(CardInbox,   { card: c });
+    else if (c.status === "scoping") body = React.createElement(CardScoping, { card: c, queuePos: props.queuePos });
+    else if (c.status === "backlog") body = React.createElement(CardBacklog, { card: c, onStart: props.onStart, onEdit: props.onEdit, onDiscard: props.onDiscard });
+    else if (c.status === "active")  body = React.createElement(CardActive,  { card: c, mission: props.mission, onJump: props.onJump });
+    else if (c.status === "done")    body = React.createElement(CardDone,    { card: c, mission: props.mission });
+    else body = React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } }, c.title);
+
+    return React.createElement(Panel, {
+      accent: accent,
+      style: { marginBottom: 8, padding: "10px 12px" },
+    }, body);
+  }
+
   // ============================================================================
   // 7. PAGES
   // ============================================================================
