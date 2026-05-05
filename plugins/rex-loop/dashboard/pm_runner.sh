@@ -86,20 +86,26 @@ with open(events_file, "a") as f:
 PY
 }
 
-# patch_card_field: set arbitrary frontmatter field
+# patch_card_field: set arbitrary frontmatter field (operates only on the YAML
+# block between the opening and closing --- fences so the missing-key insert
+# path cannot match the opening fence and corrupt the card)
 patch_card_field() {
     local card_file="$1" key="$2" value="$3"
     python3 - "$card_file" "$key" "$value" <<'PY'
 import sys, re
 card_file, key, value = sys.argv[1], sys.argv[2], sys.argv[3]
 txt = open(card_file).read()
+parts = txt.split("---", 2)
+if len(parts) < 3:
+    raise SystemExit(f"no frontmatter in {card_file}")
+fm = parts[1]
 pat = rf"^{re.escape(key)}:\s*.*$"
-if re.search(pat, txt, re.MULTILINE):
-    txt = re.sub(pat, f"{key}: {value}", txt, count=1, flags=re.MULTILINE)
+if re.search(pat, fm, re.MULTILINE):
+    fm = re.sub(pat, f"{key}: {value}", fm, count=1, flags=re.MULTILINE)
 else:
-    # Insert before closing ---
-    txt = re.sub(r"^---\s*$", f"{key}: {value}\n---", txt, count=1, flags=re.MULTILINE)
-open(card_file, "w").write(txt)
+    fm = fm.rstrip("\n") + f"\n{key}: {value}\n"
+parts[1] = fm
+open(card_file, "w").write("---".join(parts))
 PY
 }
 
@@ -146,10 +152,10 @@ if [ $RC -ne 0 ] || [ ! -s "$SCOPING_OUT" ]; then
     if [ "$NEW_ATTEMPTS" -ge 3 ]; then
         patch_card_field "$CARD_FILE" "needs_review" "true"
         patch_card "$CARD_FILE" "backlog"   # park it for Mike to fix
-        log_evt "$CARD_ID" "scope-end" "FAIL after 3 attempts — parked in backlog with needs_review=true"
+        log_evt "$CARD_ID" "scope-fail" "after 3 attempts — parked in backlog with needs_review=true"
     else
         patch_card "$CARD_FILE" "inbox"     # try again next cron
-        log_evt "$CARD_ID" "scope-end" "FAIL attempt $NEW_ATTEMPTS — back to inbox"
+        log_evt "$CARD_ID" "scope-fail" "attempt $NEW_ATTEMPTS — back to inbox"
     fi
     exit 0
 fi
@@ -202,10 +208,10 @@ if [ "$(echo "$VALIDATE_RC" | head -1)" != "OK" ]; then
     if [ "$NEW_ATTEMPTS" -ge 3 ]; then
         patch_card_field "$CARD_FILE" "needs_review" "true"
         patch_card "$CARD_FILE" "backlog"
-        log_evt "$CARD_ID" "scope-end" "FAIL after 3 attempts — parked in backlog with needs_review=true"
+        log_evt "$CARD_ID" "scope-fail" "after 3 attempts — parked in backlog with needs_review=true"
     else
         patch_card "$CARD_FILE" "inbox"
-        log_evt "$CARD_ID" "scope-end" "FAIL attempt $NEW_ATTEMPTS — back to inbox"
+        log_evt "$CARD_ID" "scope-fail" "attempt $NEW_ATTEMPTS — back to inbox"
     fi
     exit 0
 fi
