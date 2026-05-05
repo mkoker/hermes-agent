@@ -147,8 +147,47 @@
   }
 
   // ============================================================================
-  // 3. POLLING DRIVER  (filled in by Task B3)
+  // 3. POLLING DRIVER  — one timer per cadence, fan-out to subscribers
   // ============================================================================
+  const _drivers = new Map(); // ms -> { id, subs:Set<fn> }
+
+  function _ensureDriver(ms) {
+    let d = _drivers.get(ms);
+    if (d) return d;
+    d = { subs: new Set(), id: null };
+    _drivers.set(ms, d);
+    d.id = setInterval(function () {
+      if (typeof document !== "undefined" && document.hidden) return;
+      d.subs.forEach(function (fn) { try { fn(); } catch (e) { console.error("[rex-loop] poll fn threw", e); } });
+    }, ms);
+    return d;
+  }
+
+  function subscribePoll(ms, fn, runImmediately) {
+    const d = _ensureDriver(ms);
+    d.subs.add(fn);
+    if (runImmediately !== false) {
+      try { fn(); } catch (e) { console.error("[rex-loop] poll fn threw", e); }
+    }
+    return function unsubscribe() {
+      d.subs.delete(fn);
+      if (d.subs.size === 0) {
+        clearInterval(d.id);
+        _drivers.delete(ms);
+      }
+    };
+  }
+
+  // Re-fire all drivers when tab becomes visible after being hidden
+  if (typeof document !== "undefined") {
+    let wasHidden = document.hidden;
+    document.addEventListener("visibilitychange", function () {
+      if (wasHidden && !document.hidden) {
+        _drivers.forEach(function (d) { d.subs.forEach(function (fn) { try { fn(); } catch (_e) {} }); });
+      }
+      wasHidden = document.hidden;
+    });
+  }
 
   // ============================================================================
   // 4. DATA HOOKS  (filled in by Task B4)
