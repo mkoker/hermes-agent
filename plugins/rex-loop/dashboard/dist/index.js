@@ -2321,10 +2321,60 @@
   // 8. ROOT
   // ============================================================================
   function AgentsPage() {
+    const streamsState = useStreams();
+    const missionsState = useMissions();
+    const streams = (streamsState.data || []);
+    const active = streams.filter(function (s) { return s.status === "running"; });
+    const recentlyEnded = streams.filter(function (s) { return s.status !== "running"; })
+                                  .slice(0, 3);
+
+    function handleFired(j) {
+      // Next normal poll will pick up the new stream within 4s.
+    }
+
     return React.createElement("div", {
-      style: { padding: 24, color: C.text, fontFamily: FONT.chrome,
-               minHeight: "calc(100vh - 56px)", background: C.bg },
-    }, "AGENTS — coming online");
+      style: {
+        display: "grid", gridTemplateRows: "auto 1fr auto",
+        height: "calc(100vh - 56px)", background: C.bg, color: C.text,
+        fontFamily: FONT.chrome,
+      },
+    },
+      // Header
+      React.createElement("div", {
+        style: { padding: "12px 20px", borderBottom: "1px solid " + C.border,
+                 display: "flex", alignItems: "center", gap: 16 },
+      },
+        React.createElement("span", {
+          style: { color: C.accent, letterSpacing: "0.22em", fontSize: 12 },
+        }, "▌ AGENTS"),
+        React.createElement("span", { style: { color: C.textDim, fontSize: 11 } },
+          active.length + " active · " + recentlyEnded.length + " recently ended"),
+        React.createElement("span", { style: { marginLeft: "auto" } },
+          React.createElement(FireMenu, {
+            missions: missionsState.data, onFired: handleFired })),
+      ),
+      // Tile grid + cron ribbon
+      React.createElement("div", {
+        style: { padding: 16, overflowY: "auto",
+                 display: "grid",
+                 gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
+                 gap: 12, alignContent: "start" },
+      },
+        active.map(function (s) {
+          return React.createElement(StreamTile, { key: s.id, stream: s });
+        }),
+        recentlyEnded.map(function (s) {
+          return React.createElement(StreamTile, { key: s.id, stream: s });
+        }),
+        React.createElement(TelegramTile, { key: "telegram-pinned" }),
+        React.createElement(CronRibbonTile, { key: "cron-pinned" }),
+      ),
+      // Empty-state placard
+      active.length === 0 ? React.createElement("div", {
+        style: { padding: "8px 20px", borderTop: "1px solid " + C.border,
+                 color: C.textDim, fontSize: 10, letterSpacing: "0.22em" },
+      }, "▌ ALL AGENTS IDLE — fire one above or wait for next cron tick") : null,
+    );
   }
 
   const TABS = [
