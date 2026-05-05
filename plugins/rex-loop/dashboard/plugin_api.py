@@ -21,6 +21,7 @@ LOOP_ROOT = Path(os.environ.get("REX_LOOP_LOOP_ROOT",
 CRON_OUT = LOOP_ROOT / "cron.out"
 RUNNER_SH = LOOP_ROOT / "runner.sh"
 
+sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(LOOP_ROOT))
 try:
     from plan_parser import _TASK_LINE
