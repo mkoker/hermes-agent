@@ -2236,6 +2236,88 @@
 
 
   // ============================================================================
+  // 7b. FIRE MENU
+  // ============================================================================
+  function FireMenu(props) {
+    const [open, setOpen] = useState(false);
+    const [busy, setBusy] = useState(false);
+    const missions = (props.missions || []).filter(function (m) { return m.status === "active"; });
+
+    function fire(url, label) {
+      setBusy(true);
+      fetch("/api/plugins/rex-loop" + url, { method: "POST" })
+        .then(function (r) {
+          if (!r.ok) return r.text().then(function (t) { throw new Error(t); });
+          return r.json();
+        })
+        .then(function (j) {
+          setBusy(false); setOpen(false);
+          if (props.onFired) props.onFired(j);
+        })
+        .catch(function (e) {
+          setBusy(false);
+          alert(label + " failed: " + e.message);
+        });
+    }
+
+    return React.createElement("div", { style: { position: "relative" } },
+      React.createElement("button", {
+        onClick: function () { setOpen(!open); },
+        disabled: busy,
+        style: {
+          padding: "6px 12px", background: C.accent, color: "#000",
+          border: "none", borderRadius: 3, cursor: "pointer",
+          fontFamily: FONT.chrome, fontSize: 11, letterSpacing: "0.18em",
+          fontWeight: 600,
+        },
+      }, busy ? "FIRING…" : "FIRE ▾"),
+      open ? React.createElement("div", {
+        style: {
+          position: "absolute", top: "calc(100% + 4px)", right: 0,
+          background: C.surface, border: "1px solid " + C.borderHi,
+          borderRadius: 4, minWidth: 240, zIndex: 100,
+          boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+        },
+      },
+        React.createElement("div", {
+          style: { padding: "6px 12px", color: C.textDim,
+                   fontFamily: FONT.chrome, fontSize: 10,
+                   borderBottom: "1px solid " + C.border, letterSpacing: "0.18em" },
+        }, "MISSION TICKS"),
+        missions.length === 0
+          ? React.createElement("div", { style: { padding: 12, color: C.textDim, fontSize: 11 } }, "(no active missions)")
+          : missions.map(function (m) {
+              return React.createElement("div", {
+                key: m.name,
+                onClick: function () { fire("/missions/" + encodeURIComponent(m.name) + "/fire",
+                                            "fire " + m.name); },
+                style: { padding: "8px 12px", cursor: "pointer", color: C.text,
+                         fontFamily: FONT.chrome, fontSize: 11,
+                         borderBottom: "1px solid " + C.border },
+              }, "▶ " + m.name);
+            }),
+        React.createElement("div", {
+          style: { padding: "6px 12px", color: C.textDim,
+                   fontFamily: FONT.chrome, fontSize: 10,
+                   borderBottom: "1px solid " + C.border, letterSpacing: "0.18em",
+                   marginTop: 4 },
+        }, "OTHER AGENTS"),
+        React.createElement("div", {
+          onClick: function () { fire("/pm/fire", "PM"); },
+          style: { padding: "8px 12px", cursor: "pointer", color: C.text,
+                   fontFamily: FONT.chrome, fontSize: 11,
+                   borderBottom: "1px solid " + C.border },
+        }, "▶ PM SCOPING"),
+        React.createElement("div", {
+          onClick: function () { fire("/ai-brief/fire", "AI Brief"); },
+          style: { padding: "8px 12px", cursor: "pointer", color: C.text,
+                   fontFamily: FONT.chrome, fontSize: 11 },
+        }, "▶ AI BRIEF"),
+      ) : null
+    );
+  }
+
+  // ============================================================================
   // 8. ROOT
   // ============================================================================
   function AgentsPage() {
