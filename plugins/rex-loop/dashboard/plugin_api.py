@@ -614,3 +614,67 @@ async def streams_events(stream_id: str,
     return StreamingResponse(gen(), media_type="text/event-stream",
                              headers={"Cache-Control": "no-cache",
                                       "X-Accel-Buffering": "no"})
+
+
+# ============================================================================
+# Manual-fire endpoints (§6)
+# ============================================================================
+PM_RUNNER = Path(os.environ.get("REX_PM_RUNNER",
+                                "/home/ubuntu/.hermes/loop/pm_runner.sh"))
+AI_BRIEF_RUNNER = Path(os.environ.get(
+    "REX_AI_BRIEF_RUNNER",
+    "/home/ubuntu/.hermes/missions/ai-brief/run-brief.sh"))
+GLOBAL_PAUSE_FILE = LOOP_ROOT / "PAUSE"
+
+
+def _fire_runner(*, kind: str, runner_path: Path,
+                 log_dir: Path, instance: str = "manual",
+                 model_hint: str = "unknown") -> dict:
+    if GLOBAL_PAUSE_FILE.exists():
+        raise HTTPException(409, "global_pause_active")
+    if not runner_path.exists():
+        raise HTTPException(503, f"{kind} runner missing at {runner_path}")
+    # Idempotency: if a run of this kind is already in flight, return its id.
+    existing = stream_registry.list_streams(status="running", kind=kind)
+    if existing:
+        e = existing[0]
+        return {"stream_id": e["id"], "status": "already_running",
+                "pid": e.get("pid")}
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stream_id = f"{kind}:{instance}:{ts}"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"{instance}_{ts}.stream.log"
+    log_path.touch()
+
+    env = {**os.environ,
+           "REX_STREAM_ID": stream_id,
+           "REX_STREAM_LOG_PATH": str(log_path)}
+    log_fh = open(log_path, "a")
+    try:
+        proc = subprocess.Popen(
+            ["/bin/bash", str(runner_path)],
+            stdout=log_fh, stderr=subprocess.STDOUT,
+            env=env, start_new_session=True)
+    finally:
+        log_fh.close()  # subprocess holds its own fd; close our copy (fd-leak fix)
+    stream_registry.register(stream_id=stream_id, kind=kind,
+                             instance=instance, log_path=str(log_path),
+                             pid=proc.pid, model_hint=model_hint)
+    return {"stream_id": stream_id, "status": "started", "pid": proc.pid}
+
+
+@router.post("/pm/fire")
+async def pm_fire():
+    return _fire_runner(
+        kind="pm", runner_path=PM_RUNNER,
+        log_dir=Path(os.environ.get("REX_KANBAN_ROOT",
+                                    "/home/ubuntu/.hermes/kanban")) / "streams",
+        model_hint="gemma")
+
+
+@router.post("/ai-brief/fire")
+async def ai_brief_fire():
+    return _fire_runner(
+        kind="ai-brief", runner_path=AI_BRIEF_RUNNER,
+        log_dir=AI_BRIEF_RUNNER.parent / "streams",
+        model_hint="mixed")

@@ -498,3 +498,86 @@ def test_streams_events_follow_false_short_circuits_running(app, monkeypatch, tm
         assert "hi" in body
         # No status event for running stream when follow=false (status only
         # fires when stream actually ends)
+
+
+def test_pm_fire_spawns_runner_and_returns_stream_id(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    pm_runner = loop_root / "pm_runner.sh"
+    pm_runner.write_text("#!/bin/bash\nexit 0\n")
+    pm_runner.chmod(0o755)
+    streams_root = tmp_path / "streams"
+    streams_root.mkdir()
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    monkeypatch.setenv("REX_PM_RUNNER", str(pm_runner))
+    import importlib, plugin_api, stream_registry
+    importlib.reload(stream_registry)
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r = c.post("/pm/fire")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["stream_id"].startswith("pm:manual:")
+        assert body["status"] == "started"
+
+
+def test_pm_fire_blocks_when_global_pause(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    (loop_root / "PAUSE").write_text("")
+    monkeypatch.setenv("REX_PM_RUNNER", str(loop_root / "x.sh"))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r = c.post("/pm/fire")
+        assert r.status_code == 409
+        assert "global_pause" in r.text
+
+
+def test_ai_brief_fire_spawns_runner(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    brief_root = missions / "ai-brief"; brief_root.mkdir()
+    brief_sh = brief_root / "run-brief.sh"
+    brief_sh.write_text("#!/bin/bash\nexit 0\n")
+    brief_sh.chmod(0o755)
+    streams_root = tmp_path / "streams"
+    streams_root.mkdir()
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    monkeypatch.setenv("REX_AI_BRIEF_RUNNER", str(brief_sh))
+    import importlib, plugin_api, stream_registry
+    importlib.reload(stream_registry)
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r = c.post("/ai-brief/fire")
+        assert r.status_code == 200
+        assert r.json()["stream_id"].startswith("ai-brief:manual:")
+
+
+def test_pm_fire_idempotent_when_already_running(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    pm_runner = loop_root / "pm_runner.sh"
+    pm_runner.write_text("#!/bin/bash\nsleep 60\n")  # long-running stub
+    pm_runner.chmod(0o755)
+    streams_root = tmp_path / "streams"; streams_root.mkdir()
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    monkeypatch.setenv("REX_PM_RUNNER", str(pm_runner))
+    monkeypatch.setenv("REX_KANBAN_ROOT", str(tmp_path / "kanban"))
+    import importlib, plugin_api, stream_registry
+    importlib.reload(stream_registry); importlib.reload(plugin_api)
+    a2 = FastAPI(); a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r1 = c.post("/pm/fire")
+        assert r1.json()["status"] == "started"
+        first_id = r1.json()["stream_id"]
+        r2 = c.post("/pm/fire")
+        assert r2.status_code == 200
+        body = r2.json()
+        assert body["status"] == "already_running"
+        assert body["stream_id"] == first_id
+        # Cleanup: kill the lingering sleep process
+        import os, signal
+        os.kill(r1.json()["pid"], signal.SIGTERM)
