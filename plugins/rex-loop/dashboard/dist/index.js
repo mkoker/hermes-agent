@@ -1085,10 +1085,48 @@
     return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Settings tab — placeholder");
   }
 
+  // ============================================================================
+  // 8. ROOT
+  // ============================================================================
+  const TABS = [
+    { id: "overview", label: "OVERVIEW", Page: OverviewPage },
+    { id: "kanban",   label: "KANBAN",   Page: KanbanPage },
+    { id: "settings", label: "SETTINGS", Page: SettingsPage },
+  ];
+
   function RexLoopPage() {
+    const [tab, setTab] = useState(function () {
+      try { return localStorage.getItem("rex-loop:active-tab") || "overview"; } catch (_e) { return "overview"; }
+    });
+    useEffect(function () {
+      try { localStorage.setItem("rex-loop:active-tab", tab); } catch (_e) {}
+    }, [tab]);
+
+    const ActivePage = (TABS.find(function (t) { return t.id === tab; }) || TABS[0]).Page;
+
     return React.createElement("div", {
-      style: { padding: 24, color: "#79c2ff", fontFamily: "ui-monospace, monospace" },
-    }, "rex-loop war-room: skeleton (Task B0). Phase B in progress.");
+      style: { background: C.bg, color: C.text, minHeight: "100%", display: "flex", flexDirection: "column" },
+    },
+      React.createElement("nav", {
+        style: { display: "flex", gap: 0, borderBottom: "1px solid " + C.border, background: C.bg, padding: "0 16px" },
+      },
+        TABS.map(function (t) {
+          const isActive = t.id === tab;
+          return React.createElement("button", {
+            key: t.id, onClick: function () { setTab(t.id); },
+            className: "rex-chrome",
+            style: {
+              padding: "10px 16px", border: "none", background: "transparent", cursor: "pointer",
+              color: isActive ? C.accent : C.textDim, fontSize: 11, letterSpacing: "0.24em", fontWeight: 700,
+              borderBottom: "2px solid " + (isActive ? C.accent : "transparent"),
+            },
+          }, t.label);
+        }),
+      ),
+      React.createElement("div", { style: { flex: 1, minHeight: 0 } },
+        React.createElement(ActivePage),
+      ),
+    );
   }
 
   // ============================================================================
