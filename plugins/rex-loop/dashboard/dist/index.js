@@ -289,8 +289,105 @@
   }
 
   // ============================================================================
-  // 5. PRIMITIVES  (filled in by Task B5)
+  // 5. PRIMITIVES
   // ============================================================================
+  function Panel(props) {
+    const accent = props.accent || C.border;
+    return React.createElement("div", {
+      className: classNames("rex-row-enter", props.className),
+      style: Object.assign({
+        background: C.surface,
+        border: "1px solid " + accent,
+        borderRadius: 4,
+        padding: props.padding != null ? props.padding : "12px 14px",
+        color: C.text,
+        position: "relative",
+      }, props.style || {}),
+      onClick: props.onClick,
+    }, props.children);
+  }
+
+  function StatusPill(props) {
+    const map = {
+      active:    { bg: C.accent + "22", fg: C.accent,   label: "ACTIVE"   },
+      running:   { bg: C.accent + "22", fg: C.accent,   label: "RUNNING"  },
+      idle:      { bg: C.muted + "22",  fg: C.muted,    label: "IDLE"     },
+      paused:    { bg: C.error + "22",  fg: C.error,    label: "PAUSED"   },
+      done:      { bg: C.success + "22", fg: C.success, label: "DONE"     },
+      expired:   { bg: C.muted + "22",  fg: C.textDim,  label: "EXPIRED"  },
+      failed:    { bg: C.error + "22",  fg: C.error,    label: "FAILED"   },
+      pending:   { bg: C.info + "22",   fg: C.info,     label: "PENDING"  },
+    };
+    const m = map[props.status] || { bg: C.border, fg: C.textDim, label: String(props.status || "—").toUpperCase() };
+    return React.createElement("span", {
+      className: "rex-chrome",
+      style: {
+        display: "inline-flex", alignItems: "center", gap: 6,
+        background: m.bg, color: m.fg,
+        fontSize: 10, fontWeight: 700,
+        padding: "2px 8px", borderRadius: 2,
+        border: "1px solid " + m.fg + "44",
+      },
+    }, props.children || m.label);
+  }
+
+  function Stat(props) {
+    // {label, value, sub?, color?}
+    const color = props.color || C.text;
+    return React.createElement("div", {
+      style: { display: "flex", flexDirection: "column", gap: 2, minWidth: 0 },
+    },
+      React.createElement("span", {
+        className: "rex-chrome",
+        style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" },
+      }, props.label),
+      React.createElement("span", {
+        className: "rex-mono",
+        style: { fontSize: 18, color: color, fontVariantNumeric: "tabular-nums", lineHeight: 1.1 },
+      }, props.value),
+      props.sub != null ? React.createElement("span", {
+        className: "rex-mono",
+        style: { fontSize: 10, color: C.textDim, fontVariantNumeric: "tabular-nums" },
+      }, props.sub) : null,
+    );
+  }
+
+  function Sparkline(props) {
+    // {values: number[], width, height, color}
+    const w = props.width || 80, h = props.height || 18;
+    const values = props.values || [];
+    if (values.length < 2) {
+      return React.createElement("div", { style: { width: w, height: h, opacity: 0.3 } }, "—");
+    }
+    const min = Math.min.apply(null, values);
+    const max = Math.max.apply(null, values);
+    const range = max - min || 1;
+    const step = w / (values.length - 1);
+    const points = values.map(function (v, i) {
+      const x = i * step;
+      const y = h - ((v - min) / range) * h;
+      return x.toFixed(1) + "," + y.toFixed(1);
+    }).join(" ");
+    return React.createElement("svg", {
+      width: w, height: h, viewBox: "0 0 " + w + " " + h, style: { display: "block" },
+    }, React.createElement("polyline", {
+      points: points, fill: "none", stroke: props.color || C.info, strokeWidth: 1.2, strokeLinejoin: "round", strokeLinecap: "round",
+    }));
+  }
+
+  function IconButton(props) {
+    return React.createElement("button", {
+      onClick: props.onClick, disabled: props.disabled, title: props.title,
+      style: Object.assign({
+        background: "transparent",
+        border: "1px solid " + (props.danger ? C.error : C.border),
+        color: props.danger ? C.error : C.text,
+        padding: "6px 10px", fontSize: 10, fontFamily: FONT.chrome, letterSpacing: "0.18em", textTransform: "uppercase",
+        cursor: props.disabled ? "not-allowed" : "pointer", borderRadius: 2,
+        opacity: props.disabled ? 0.4 : 1,
+      }, props.style || {}),
+    }, props.children);
+  }
 
   // ============================================================================
   // 6. COMPONENTS  (filled in by Tasks B6–B11)
