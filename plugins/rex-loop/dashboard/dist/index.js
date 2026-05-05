@@ -488,6 +488,108 @@
     );
   }
 
+  // ---------- LeftRail ----------
+  function MissionCard(props) {
+    const m = props.mission;
+    const isSelected = props.selected;
+    const isLive = m.current_tick && m.current_tick.state === "running";
+
+    const sparkValues = useMemo(function () {
+      const ticks = (m.ticks_summary || []).slice(-20);
+      // Map state to numeric: done=1, running=0.7, failed=0, pending=0.3
+      return ticks.map(function (t) {
+        if (t.state === "done") return 1;
+        if (t.state === "running") return 0.7;
+        if (t.state === "failed") return 0;
+        return 0.3;
+      });
+    }, [m.ticks_summary]);
+
+    const daysLeft = useMemo(function () {
+      if (!m.started_at || !m.max_days) return null;
+      const elapsedSec = (Date.now() - new Date(m.started_at).getTime()) / 1000;
+      const remaining = m.max_days * 86400 - elapsedSec;
+      return Math.max(0, Math.floor(remaining / 86400));
+    }, [m.started_at, m.max_days]);
+
+    return React.createElement(Panel, {
+      onClick: function () { props.onSelect(m.name); },
+      accent: isSelected ? C.accent : (isLive ? C.accent + "88" : C.border),
+      className: isLive ? "rex-pulse-yellow" : null,
+      style: {
+        cursor: "pointer", marginBottom: 8,
+        transition: "border-color 0.2s",
+        background: isSelected ? "rgba(255,214,10,0.08)" : C.surface,
+      },
+    },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 } },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", minWidth: 0, flex: 1 } },
+          React.createElement("span", {
+            className: "rex-mono",
+            style: { fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+          }, m.name),
+          React.createElement("span", {
+            className: "rex-mono",
+            style: { fontSize: 10, color: C.textDim, marginTop: 2 },
+          }, (m.tick_count || 0) + " ticks · " + (daysLeft != null ? daysLeft + "d left" : "no cap")),
+        ),
+        React.createElement(StatusPill, { status: isLive ? "running" : m.status }),
+      ),
+      React.createElement("div", { style: { marginTop: 8 } },
+        React.createElement(Sparkline, {
+          values: sparkValues, width: 200, height: 14, color: isLive ? C.accent : C.info,
+        }),
+      ),
+    );
+  }
+
+  function LeftRail(props) {
+    const { missions, selected, onSelect } = props;
+    const groups = useMemo(function () {
+      const g = { active: [], done: [], expired: [] };
+      (missions || []).forEach(function (m) {
+        if (m.status === "active") g.active.push(m);
+        else if (m.status === "done") g.done.push(m);
+        else g.expired.push(m);
+      });
+      return g;
+    }, [missions]);
+
+    function GroupHeader(props) {
+      return React.createElement("div", {
+        className: "rex-chrome",
+        style: {
+          fontSize: 10, color: C.textDim, padding: "12px 4px 6px",
+          borderBottom: "1px solid " + C.border, marginBottom: 8, letterSpacing: "0.24em",
+        },
+      }, props.label + " · " + props.count);
+    }
+
+    return React.createElement("aside", {
+      className: "rex-scroll",
+      style: {
+        width: 320, padding: "12px 12px 16px",
+        borderRight: "1px solid " + C.border,
+        overflowY: "auto", height: "100%",
+      },
+    },
+      React.createElement(GroupHeader, { label: "ACTIVE", count: groups.active.length }),
+      groups.active.length === 0
+        ? React.createElement("div", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, padding: "4px 4px 12px" } }, "no active missions")
+        : groups.active.map(function (m) {
+            return React.createElement(MissionCard, { key: m.name, mission: m, selected: selected === m.name, onSelect: onSelect });
+          }),
+      React.createElement(GroupHeader, { label: "DONE", count: groups.done.length }),
+      groups.done.map(function (m) {
+        return React.createElement(MissionCard, { key: m.name, mission: m, selected: selected === m.name, onSelect: onSelect });
+      }),
+      React.createElement(GroupHeader, { label: "EXPIRED", count: groups.expired.length }),
+      groups.expired.map(function (m) {
+        return React.createElement(MissionCard, { key: m.name, mission: m, selected: selected === m.name, onSelect: onSelect });
+      }),
+    );
+  }
+
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
   // ============================================================================
