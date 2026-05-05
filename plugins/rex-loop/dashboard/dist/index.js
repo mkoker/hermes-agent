@@ -434,6 +434,53 @@
     return useApi("/streams" + filterStr, POLL.streams || 4000, [filterStr]);
   }
 
+  function useStreamSSE(streamId) {
+    const [state, setState] = useState({ lines: [], status: "running",
+                                          exitCode: null, err: null });
+    const linesRef = useRef([]);
+
+    useEffect(function () {
+      if (!streamId) return;
+      const url = "/api/plugins/rex-loop/streams/" +
+                  encodeURIComponent(streamId) + "/events";
+      const es = new EventSource(url);
+
+      es.addEventListener("snapshot", function (e) {
+        try {
+          const o = JSON.parse(e.data);
+          const lines = o.lines || [];
+          linesRef.current = lines.slice(-1000);
+          setState(function (s) { return Object.assign({}, s,
+            { lines: linesRef.current.slice(), err: null }); });
+        } catch (_e) {}
+      });
+      es.addEventListener("line", function (e) {
+        try {
+          const o = JSON.parse(e.data);
+          linesRef.current = linesRef.current.concat([o]).slice(-1000);
+          setState(function (s) { return Object.assign({}, s,
+            { lines: linesRef.current.slice(), err: null }); });
+        } catch (_e) {}
+      });
+      es.addEventListener("status", function (e) {
+        try {
+          const o = JSON.parse(e.data);
+          setState(function (s) { return Object.assign({}, s,
+            { status: o.status, exitCode: o.exit_code }); });
+        } catch (_e) {}
+        es.close();
+      });
+      es.onerror = function () {
+        // EventSource auto-reconnects with Last-Event-Id natively.
+        setState(function (s) { return Object.assign({}, s, { err: "reconnecting" }); });
+      };
+
+      return function () { es.close(); };
+    }, [streamId]);
+
+    return state;
+  }
+
   // ============================================================================
   // 5. PRIMITIVES
   // ============================================================================
