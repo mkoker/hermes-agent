@@ -390,8 +390,103 @@
   }
 
   // ============================================================================
-  // 6. COMPONENTS  (filled in by Tasks B6–B11)
+  // 6. COMPONENTS
   // ============================================================================
+
+  // ---------- Header ----------
+  function Header(props) {
+    const { missions, tokensToday, tokensTotal, pause } = props;
+
+    const ticksToday = useMemo(function () {
+      if (!missions) return 0;
+      const today = new Date().toISOString().slice(0, 10);
+      let n = 0;
+      missions.forEach(function (m) {
+        (m.ticks_summary || []).forEach(function (t) {
+          if ((t.started_at || "").slice(0, 10) === today) n++;
+        });
+      });
+      return n;
+    }, [missions]);
+
+    const fails24h = useMemo(function () {
+      if (!missions) return 0;
+      const cutoff = Date.now() - 86400 * 1000;
+      let n = 0;
+      missions.forEach(function (m) {
+        (m.ticks_summary || []).forEach(function (t) {
+          if (t.state === "failed" && new Date(t.started_at).getTime() >= cutoff) n++;
+        });
+      });
+      return n;
+    }, [missions]);
+
+    const agentTimeToday = useMemo(function () {
+      if (!tokensToday || !tokensToday.by_role) return 0;
+      let s = 0;
+      Object.keys(tokensToday.by_role).forEach(function (k) { s += safeNum(tokensToday.by_role[k].wall, 0); });
+      return s;
+    }, [tokensToday]);
+
+    const loopUptime = useMemo(function () {
+      if (!missions || missions.length === 0) return null;
+      const earliest = missions
+        .map(function (m) { return m.started_at; })
+        .filter(Boolean)
+        .map(function (s) { return new Date(s).getTime(); })
+        .sort()[0];
+      return earliest ? Math.floor((Date.now() - earliest) / 1000) : null;
+    }, [missions]);
+
+    return React.createElement("header", {
+      style: {
+        display: "grid",
+        gridTemplateColumns: "auto 1fr auto",
+        alignItems: "center",
+        gap: 24,
+        padding: "12px 20px",
+        borderBottom: "1px solid " + C.border,
+        background: "linear-gradient(180deg, " + C.bg + " 0%, rgba(0,8,20,0.92) 100%)",
+      },
+    },
+      // Brand
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+        React.createElement("div", {
+          style: {
+            width: 28, height: 28, borderRadius: 2,
+            background: C.accent, color: C.bg,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: FONT.mono, fontWeight: 800, fontSize: 14,
+          },
+        }, "R"),
+        React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
+          React.createElement("span", { className: "rex-chrome", style: { fontSize: 13, color: C.text, letterSpacing: "0.3em", fontWeight: 700 } }, "REX // LOOP"),
+          React.createElement("span", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, letterSpacing: "0.2em" } }, "WAR ROOM · v4"),
+        ),
+      ),
+      // Stats row
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 18, justifyItems: "start" },
+      },
+        React.createElement(Stat, { label: "Loop Uptime",      value: loopUptime != null ? fmtDuration(loopUptime) : "—" }),
+        React.createElement(Stat, { label: "Ticks Today",      value: ticksToday, color: C.accent }),
+        React.createElement(Stat, { label: "Agent Time Today", value: fmtDuration(agentTimeToday) }),
+        React.createElement(Stat, { label: "Tokens Today",     value: fmtTokens(safeNum(tokensToday && (tokensToday["in"] + tokensToday.out))), color: C.success }),
+        React.createElement(Stat, { label: "Total Tokens",     value: fmtTokens(safeNum(tokensTotal && (tokensTotal["in"] + tokensTotal.out))) }),
+        React.createElement(Stat, { label: "Fails 24h",        value: fails24h, color: fails24h > 0 ? C.error : C.success }),
+      ),
+      // Pause
+      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
+        pause.paused
+          ? React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.error, letterSpacing: "0.22em" } }, "ALL LOOPS PAUSED")
+          : React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.success, letterSpacing: "0.22em" } }, "RUNNING"),
+        React.createElement(IconButton, {
+          onClick: pause.toggle, danger: !pause.paused,
+        }, pause.paused ? "RESUME ALL" : "PAUSE ALL"),
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginLeft: 8 } }, tzNow()),
+      ),
+    );
+  }
 
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
