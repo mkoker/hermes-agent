@@ -1,5 +1,6 @@
 """Tests for rex-loop plugin API."""
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -375,3 +376,44 @@ def test_kanban_promote_invokes_script(app, monkeypatch, tmp_path):
     assert r.status_code == 200
     assert marker.exists()
     assert marker.read_text().strip() == cid
+
+
+def test_streams_endpoint_lists_registered_entries(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    streams_root = tmp_path / "streams"
+    streams_root.mkdir()
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    import importlib, stream_registry, plugin_api
+    importlib.reload(stream_registry)
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    stream_registry.register(stream_id="s1", kind="mission",
+                             instance="foo", log_path="/x",
+                             pid=os.getpid(), model_hint="codex")
+    with TestClient(a2) as c:
+        r = c.get("/streams")
+        assert r.status_code == 200
+        assert [s["id"] for s in r.json()] == ["s1"]
+
+
+def test_streams_endpoint_filter_by_kind(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    streams_root = tmp_path / "streams"
+    streams_root.mkdir()
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    import importlib, stream_registry, plugin_api
+    importlib.reload(stream_registry)
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    stream_registry.register(stream_id="m1", kind="mission",
+                             instance="foo", log_path="/x",
+                             pid=os.getpid(), model_hint="codex")
+    stream_registry.register(stream_id="p1", kind="pm",
+                             instance="card-1", log_path="/y",
+                             pid=os.getpid(), model_hint="gemma")
+    with TestClient(a2) as c:
+        r = c.get("/streams?kind=pm")
+        assert r.status_code == 200
+        assert [s["id"] for s in r.json()] == ["p1"]

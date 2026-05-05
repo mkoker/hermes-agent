@@ -23,6 +23,7 @@ RUNNER_SH = LOOP_ROOT / "runner.sh"
 
 sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(LOOP_ROOT))
+import stream_registry
 try:
     from plan_parser import _TASK_LINE
 except Exception:
@@ -508,3 +509,13 @@ async def kanban_promote(card_id: str):
     if rc.returncode != 0:
         raise HTTPException(500, f"promote failed: {rc.stderr.strip()[:200]}")
     return {"promoted": card_id, "stdout": rc.stdout.strip()}
+
+
+# ============================================================================
+# STREAMS
+# ============================================================================
+
+@router.get("/streams")
+async def streams_list(status: str | None = Query(None),
+                       kind: str | None = Query(None)):
+    return stream_registry.list_streams(status=status, kind=kind)
