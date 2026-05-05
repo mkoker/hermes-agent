@@ -65,3 +65,60 @@ def test_sum_session_tokens_ignores_user_messages():
         {"role": "assistant", "usage": {"input_tokens": 10, "output_tokens": 5}},
     ]}
     assert sum_session_tokens(sess) == (10, 5)
+
+import json
+
+
+def _make_session(tmp_path, sid, model, messages, started="2026-05-04T12:00:00Z", profile=None):
+    """Helper: write a session JSON to tmp_path/sessions/."""
+    sd = tmp_path / "sessions"
+    sd.mkdir(exist_ok=True)
+    sess = {
+        "session_id": sid, "model": model, "session_start": started,
+        "messages": messages,
+    }
+    if profile:
+        sess["metadata"] = {"profile": profile}
+    p = sd / f"session_{sid}.json"
+    p.write_text(json.dumps(sess))
+    return p
+
+
+def test_scrape_all_aggregates_by_day_and_role(tmp_path):
+    from token_scraper import scrape_all
+    _make_session(tmp_path, "a", "claude-sonnet-4-6",
+                  [{"role": "assistant", "usage": {"input_tokens": 100, "output_tokens": 50}}],
+                  started="2026-05-04T12:00:00Z", profile="coder")
+    _make_session(tmp_path, "b", "qwen3.6-35b",
+                  [{"role": "assistant", "usage": {"prompt_tokens": 200, "completion_tokens": 80}}],
+                  started="2026-05-04T13:00:00Z", profile="researcher")
+    _make_session(tmp_path, "c", "claude-sonnet-4-6",
+                  [{"role": "assistant", "usage": {"input_tokens": 50, "output_tokens": 25}}],
+                  started="2026-05-05T08:00:00Z", profile="coder")
+
+    totals_path = tmp_path / "token-totals.json"
+    result = scrape_all(sessions_dir=tmp_path / "sessions", totals_path=totals_path)
+
+    assert result["lifetime_total_in"] == 350
+    assert result["lifetime_total_out"] == 155
+    assert result["by_day"]["2026-05-04"]["in"] == 300
+    assert result["by_day"]["2026-05-04"]["out"] == 130
+    assert result["by_day"]["2026-05-04"]["by_role"]["coder"]["in"] == 100
+    assert result["by_day"]["2026-05-04"]["by_role"]["researcher"]["in"] == 200
+    assert result["by_day"]["2026-05-05"]["in"] == 50
+    assert totals_path.exists()
+
+
+def test_scrape_all_is_incremental(tmp_path):
+    from token_scraper import scrape_all
+    _make_session(tmp_path, "a", "claude", [{"role": "assistant", "usage": {"input_tokens": 100, "output_tokens": 50}}])
+    totals_path = tmp_path / "token-totals.json"
+    r1 = scrape_all(sessions_dir=tmp_path / "sessions", totals_path=totals_path)
+    assert r1["lifetime_total_in"] == 100
+    # Run again — should NOT double-count
+    r2 = scrape_all(sessions_dir=tmp_path / "sessions", totals_path=totals_path)
+    assert r2["lifetime_total_in"] == 100
+    # Add a new session
+    _make_session(tmp_path, "b", "claude", [{"role": "assistant", "usage": {"input_tokens": 200, "output_tokens": 100}}])
+    r3 = scrape_all(sessions_dir=tmp_path / "sessions", totals_path=totals_path)
+    assert r3["lifetime_total_in"] == 300
