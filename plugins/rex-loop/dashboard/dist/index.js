@@ -190,8 +190,103 @@
   }
 
   // ============================================================================
-  // 4. DATA HOOKS  (filled in by Task B4)
+  // 4. DATA HOOKS
   // ============================================================================
+  function useApi(path, intervalMs, deps) {
+    const [state, setState] = useState({ data: null, error: null, loading: true });
+    const pathRef = useRef(path);
+    pathRef.current = path;
+
+    useEffect(function () {
+      let cancelled = false;
+      function tick() {
+        const p = pathRef.current;
+        if (!p) { setState(function (s) { return Object.assign({}, s, { loading: false }); }); return; }
+        api(p).then(function (data) {
+          if (cancelled) return;
+          setState({ data: data, error: null, loading: false });
+        }).catch(function (err) {
+          if (cancelled) return;
+          setState(function (s) { return { data: s.data, error: err, loading: false }; });
+        });
+      }
+      const unsub = subscribePoll(intervalMs, tick, true);
+      return function () { cancelled = true; unsub(); };
+    // eslint-disable-next-line
+    }, (deps || []).concat([intervalMs]));
+    return state;
+  }
+
+  function useMissions() {
+    return useApi("/missions", POLL.missions);
+  }
+
+  function useTicks(missionName) {
+    const path = missionName ? "/missions/" + encodeURIComponent(missionName) + "/ticks" : null;
+    return useApi(path, POLL.ticks, [missionName]);
+  }
+
+  function useTickFile(missionName, tickId) {
+    const path = (missionName && tickId != null)
+      ? "/missions/" + encodeURIComponent(missionName) + "/tickfile/" + encodeURIComponent(tickId)
+      : null;
+    return useApi(path, POLL.tickfile, [missionName, tickId]);
+  }
+
+  function useTokensToday() { return useApi("/tokens/today", POLL.tokensTodayBy); }
+  function useTokensTotal() { return useApi("/tokens/total", POLL.tokensTodayBy); }
+  function useTokensByRole() { return useApi("/tokens/by-role", POLL.tokensTodayBy); }
+  function useTokensByHour(window) {
+    return useApi("/tokens/by-hour?window=" + (window || 24), POLL.tokensByHour, [window]);
+  }
+
+  function useCronStream() {
+    const [lines, setLines] = useState([]);
+    const sinceRef = useRef(null);
+    useEffect(function () {
+      let cancelled = false;
+      function tick() {
+        const q = sinceRef.current ? "?since=" + encodeURIComponent(sinceRef.current) : "";
+        api("/cron-stream" + q).then(function (data) {
+          if (cancelled) return;
+          const fresh = (data && data.lines) || [];
+          if (fresh.length === 0) return;
+          sinceRef.current = fresh[fresh.length - 1].ts || sinceRef.current;
+          setLines(function (prev) {
+            const merged = prev.concat(fresh);
+            // Keep last 500 events to bound memory
+            return merged.length > 500 ? merged.slice(merged.length - 500) : merged;
+          });
+        }).catch(function () { /* ignore transient errors */ });
+      }
+      const unsub = subscribePoll(POLL.cronStream, tick, true);
+      return function () { cancelled = true; unsub(); };
+    }, []);
+    return lines;
+  }
+
+  function useGlobalPause() {
+    const [paused, setPaused] = useState(false);
+    const refresh = useCallback(function () {
+      api("/global-pause").then(function (d) { setPaused(!!(d && d.paused)); }).catch(function () {});
+    }, []);
+    useEffect(function () { refresh(); }, [refresh]);
+    const toggle = useCallback(function () {
+      const target = !paused;
+      api("/global-pause", { method: "POST", body: JSON.stringify({ paused: target }), headers: { "content-type": "application/json" } })
+        .then(function () { setPaused(target); }).catch(function () { refresh(); });
+    }, [paused, refresh]);
+    return { paused: paused, toggle: toggle };
+  }
+
+  // Currently-active mission (server-side: any mission whose latest tick is "running")
+  function useActiveMission(missions) {
+    return useMemo(function () {
+      if (!missions) return null;
+      const running = missions.find(function (m) { return m.status === "active" && m.current_tick && m.current_tick.state === "running"; });
+      return running || null;
+    }, [missions]);
+  }
 
   // ============================================================================
   // 5. PRIMITIVES  (filled in by Task B5)
