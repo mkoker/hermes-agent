@@ -68,3 +68,63 @@ def register(*, stream_id: str, kind: str, instance: str,
         data["streams"].append(entry)
         _save(data)
     return entry
+
+
+def patch(*, stream_id: str, status: str | None = None,
+          exit_code: int | None = None) -> dict:
+    """Update status/ended_at/exit_code on an existing entry."""
+    if status is None and exit_code is None:
+        raise ValueError(
+            "patch() requires at least one of status= or exit_code=")
+    _ensure_root()
+    with LOCK_PATH.open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        data = _load()
+        for s in data["streams"]:
+            if s["id"] == stream_id:
+                if status is not None:
+                    s["status"] = status
+                    if status != "running":
+                        s["ended_at"] = _now_z()
+                if exit_code is not None:
+                    s["exit_code"] = exit_code
+                _save(data)
+                return s
+        raise KeyError(stream_id)
+
+
+def _is_alive(pid: int | None) -> bool:
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def list_streams(*, status: str | None = None,
+                 kind: str | None = None) -> list[dict]:
+    """List entries, optionally filtered. Auto-patches stale running pids to killed."""
+    _ensure_root()
+    with LOCK_PATH.open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        data = _load()
+        changed = False
+        for s in data["streams"]:
+            if s["status"] == "running" and not _is_alive(s.get("pid")):
+                s["status"] = "killed"
+                s["ended_at"] = _now_z()
+                changed = True
+        if changed:
+            _save(data)
+        out = list(data["streams"])
+    if status is not None:
+        out = [s for s in out if s["status"] == status]
+    if kind is not None:
+        out = [s for s in out if s["kind"] == kind]
+    return out
