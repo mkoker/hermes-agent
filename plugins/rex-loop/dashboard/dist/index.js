@@ -90,8 +90,61 @@
   }
 
   // ============================================================================
-  // 2. UTILITIES  (filled in by Task B2)
+  // 2. UTILITIES
   // ============================================================================
+  function fmtTokens(n) {
+    if (n == null || isNaN(n)) return "—";
+    if (n < 1000) return String(n);
+    if (n < 1_000_000) return (n / 1000).toFixed(n < 10000 ? 1 : 0) + "k";
+    if (n < 1_000_000_000) return (n / 1_000_000).toFixed(n < 10_000_000 ? 2 : 1) + "M";
+    return (n / 1_000_000_000).toFixed(2) + "B";
+  }
+
+  function fmtDuration(seconds) {
+    if (seconds == null || isNaN(seconds)) return "—";
+    seconds = Math.max(0, Math.floor(seconds));
+    if (seconds < 60) return seconds + "s";
+    if (seconds < 3600) return Math.floor(seconds / 60) + "m " + (seconds % 60) + "s";
+    if (seconds < 86400) {
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      return h + "h " + m + "m";
+    }
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    return d + "d " + h + "h";
+  }
+
+  function tzFormat(dt, opts) {
+    // dt: Date or ISO string. Returns clock string with TZ abbrev appended.
+    const d = (dt instanceof Date) ? dt : new Date(dt);
+    if (isNaN(d.getTime())) return "—";
+    const o = Object.assign({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false, timeZone: TZ, timeZoneName: "short" }, opts || {});
+    try { return new Intl.DateTimeFormat(undefined, o).format(d); }
+    catch (_e) { return d.toISOString(); }
+  }
+
+  function tzNow() { return tzFormat(new Date()); }
+
+  function relTime(iso) {
+    if (!iso) return "—";
+    const then = new Date(iso).getTime();
+    if (isNaN(then)) return "—";
+    const delta = Math.floor((Date.now() - then) / 1000);
+    if (delta < 0)   return "in " + fmtDuration(-delta);
+    if (delta < 60)  return "just now";
+    if (delta < 3600) return fmtDuration(delta) + " ago";
+    if (delta < 86400) return fmtDuration(delta) + " ago";
+    return fmtDuration(delta) + " ago";
+  }
+
+  function classNames(/* ...args */) {
+    return Array.prototype.filter.call(arguments, Boolean).join(" ");
+  }
+
+  function safeNum(n, fallback) {
+    return (typeof n === "number" && !isNaN(n)) ? n : (fallback == null ? 0 : fallback);
+  }
 
   // ============================================================================
   // 3. POLLING DRIVER  (filled in by Task B3)
