@@ -809,6 +809,116 @@
     );
   }
 
+
+  // ---------- TokensColumn ----------
+  function BigTokens(props) {
+    const inN = safeNum(props.in);
+    const outN = safeNum(props.out);
+    return React.createElement(Panel, null,
+      React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em" } }, props.label),
+      React.createElement("div", { style: { display: "flex", gap: 16, marginTop: 6, alignItems: "baseline" } },
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 28, color: C.text, fontVariantNumeric: "tabular-nums", lineHeight: 1 } }, fmtTokens(inN + outN)),
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } },
+          "in " + fmtTokens(inN) + " · out " + fmtTokens(outN)),
+      ),
+      props.sub ? React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginTop: 4, display: "block" } }, props.sub) : null,
+    );
+  }
+
+  function ByRoleTable(props) {
+    const data = props.data || {};
+    const roles = Object.keys(data).sort();
+    return React.createElement(Panel, null,
+      React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em", display: "block", marginBottom: 8 } }, "BY ROLE"),
+      roles.length === 0
+        ? React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } }, "no per-role data yet")
+        : React.createElement("table", {
+            style: { width: "100%", borderCollapse: "collapse", fontFamily: FONT.mono, fontSize: 10 },
+          },
+            React.createElement("thead", null,
+              React.createElement("tr", { style: { color: C.textDim } },
+                React.createElement("th", { style: { textAlign: "left", padding: "2px 4px", letterSpacing: "0.18em" } }, "ROLE"),
+                React.createElement("th", { style: { textAlign: "right", padding: "2px 4px", letterSpacing: "0.18em" } }, "TODAY"),
+                React.createElement("th", { style: { textAlign: "right", padding: "2px 4px", letterSpacing: "0.18em" } }, "LIFETIME"),
+                React.createElement("th", { style: { textAlign: "right", padding: "2px 4px", letterSpacing: "0.18em" } }, "WALL"),
+              ),
+            ),
+            React.createElement("tbody", null,
+              roles.map(function (r) {
+                const row = data[r] || {};
+                const tIn = safeNum(row.today && row.today["in"]) + safeNum(row.today && row.today.out);
+                const lIn = safeNum(row.lifetime && row.lifetime["in"]) + safeNum(row.lifetime && row.lifetime.out);
+                const wall = safeNum(row.lifetime && row.lifetime.wall);
+                return React.createElement("tr", { key: r, style: { borderTop: "1px solid " + C.border } },
+                  React.createElement("td", { style: { padding: "4px", color: C.text, textTransform: "capitalize" } }, r),
+                  React.createElement("td", { style: { padding: "4px", textAlign: "right", color: C.accent } }, fmtTokens(tIn)),
+                  React.createElement("td", { style: { padding: "4px", textAlign: "right", color: C.text } }, fmtTokens(lIn)),
+                  React.createElement("td", { style: { padding: "4px", textAlign: "right", color: C.textDim } }, fmtDuration(wall)),
+                );
+              }),
+            ),
+          ),
+    );
+  }
+
+  function HourlyChart(props) {
+    const points = props.data || [];
+    const W = 360, H = 80, PAD = 4;
+    if (points.length === 0) {
+      return React.createElement(Panel, null,
+        React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em" } }, "TOKENS / HR · 24H"),
+        React.createElement("div", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginTop: 8 } }, "no hourly data"),
+      );
+    }
+    const totals = points.map(function (p) { return safeNum(p["in"]) + safeNum(p.out); });
+    const max = Math.max.apply(null, totals) || 1;
+    const barW = (W - 2 * PAD) / Math.max(points.length, 1);
+    return React.createElement(Panel, null,
+      React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em" } }, "TOKENS / HR · " + points.length + "H"),
+      React.createElement("svg", {
+        width: "100%", height: H, viewBox: "0 0 " + W + " " + H,
+        style: { display: "block", marginTop: 6 },
+      },
+        points.map(function (p, i) {
+          const total = totals[i];
+          const h = (total / max) * (H - 2 * PAD);
+          return React.createElement("rect", {
+            key: i,
+            x: (PAD + i * barW).toFixed(1), y: (H - PAD - h).toFixed(1),
+            width: Math.max(1, barW - 1).toFixed(1), height: h.toFixed(1),
+            fill: i === points.length - 1 ? C.accent : C.info,
+            opacity: 0.85,
+          });
+        }),
+      ),
+    );
+  }
+
+  function TokensColumn(props) {
+    const { today, total, byRole, byHour } = props;
+    return React.createElement("aside", {
+      className: "rex-scroll",
+      style: {
+        width: 380, padding: "12px 12px 16px",
+        borderLeft: "1px solid " + C.border,
+        overflowY: "auto", height: "100%",
+        display: "flex", flexDirection: "column", gap: 12,
+      },
+    },
+      React.createElement(BigTokens, {
+        label: "TOKENS TODAY",
+        in: today && today["in"], out: today && today.out,
+      }),
+      React.createElement(BigTokens, {
+        label: "TOTAL TOKENS",
+        in: total && total["in"], out: total && total.out,
+        sub: total && total.days_running ? (total.days_running + " days · avg " + fmtTokens(safeNum(total.avg_per_day && (total.avg_per_day["in"] + total.avg_per_day.out))) + "/day") : null,
+      }),
+      React.createElement(ByRoleTable, { data: byRole || {} }),
+      React.createElement(HourlyChart, { data: byHour || [] }),
+    );
+  }
+
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
   // ============================================================================
