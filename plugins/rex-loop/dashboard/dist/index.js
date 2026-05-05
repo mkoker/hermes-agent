@@ -983,8 +983,107 @@
   }
 
   // ============================================================================
-  // 7. PAGES  (filled in by Tasks B12, B13)
+  // 7. PAGES
   // ============================================================================
+
+  function IdleBanner(props) {
+    const m = props.mission;
+    const next = m.next_tick_at ? new Date(m.next_tick_at).getTime() : null;
+    const remaining = next ? Math.max(0, Math.floor((next - Date.now()) / 1000)) : null;
+    return React.createElement(Panel, { style: { marginBottom: 8 } },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 } },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
+          React.createElement("span", { className: "rex-mono", style: { fontSize: 12, color: C.text, fontWeight: 700 } }, m.name),
+          React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginTop: 2 } },
+            "IDLE · last tick #" + (m.tick_count || 0) +
+            (m.last_gate_state ? " · gate " + m.last_gate_state : "") +
+            (remaining != null ? " · next in " + fmtDuration(remaining) : "")),
+        ),
+        React.createElement(StatusPill, { status: "idle" }),
+      ),
+    );
+  }
+
+  function OverviewPage(props) {
+    const missionsState = useMissions();
+    const missions = missionsState.data || [];
+    const [selectedName, setSelectedName] = useState(null);
+    const active = useActiveMission(missions);
+    const selected = useMemo(function () {
+      if (selectedName) return missions.find(function (m) { return m.name === selectedName; }) || null;
+      return active;
+    }, [missions, selectedName, active]);
+
+    const liveTickId = (active && active.current_tick) ? active.current_tick.id : null;
+    const tickfileState = useTickFile(active && active.name, liveTickId);
+
+    const tokensTodayState = useTokensToday();
+    const tokensTotalState = useTokensTotal();
+    const byRoleState      = useTokensByRole();
+    const byHourState      = useTokensByHour(24);
+
+    const cronLines = useCronStream();
+    const [cronFilter, setCronFilter] = useState("ALL");
+
+    const pause = useGlobalPause();
+
+    return React.createElement("div", {
+      style: {
+        display: "grid",
+        gridTemplateRows: "auto 1fr auto",
+        height: "calc(100vh - 56px)",  // adjust if Hermes nav height differs
+        background: C.bg, color: C.text, fontFamily: FONT.chrome,
+      },
+    },
+      React.createElement(Header, {
+        missions: missions, tokensToday: tokensTodayState.data, tokensTotal: tokensTotalState.data, pause: pause,
+      }),
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "320px 1fr 380px", minHeight: 0 },
+      },
+        React.createElement(LeftRail, {
+          missions: missions, selected: selected ? selected.name : null, onSelect: setSelectedName,
+        }),
+        React.createElement("main", {
+          className: "rex-scroll",
+          style: { padding: "12px 16px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 },
+        },
+          // Live agent panel (only if there's an actively running tick)
+          active
+            ? React.createElement(AgentPanel, {
+                mission: active, tickfile: tickfileState.data, loadingTick: tickfileState.loading,
+              })
+            : null,
+          // Live tick file viewer
+          active
+            ? React.createElement(TickFileViewer, { tickfile: tickfileState.data })
+            : null,
+          // Idle banners for non-running missions
+          missions.filter(function (m) { return m.status === "active" && (!m.current_tick || m.current_tick.state !== "running"); })
+            .map(function (m) { return React.createElement(IdleBanner, { key: m.name, mission: m }); }),
+          // Empty state
+          missions.length === 0 && !missionsState.loading
+            ? React.createElement(Panel, null,
+                React.createElement("span", { className: "rex-mono", style: { fontSize: 11, color: C.textDim } }, "no missions in ~/.hermes/missions/"),
+              )
+            : null,
+        ),
+        React.createElement(TokensColumn, {
+          today: tokensTodayState.data, total: tokensTotalState.data, byRole: byRoleState.data, byHour: byHourState.data,
+        }),
+      ),
+      React.createElement(CronStrip, {
+        lines: cronLines, missions: missions, filter: cronFilter, onFilterChange: setCronFilter,
+      }),
+    );
+  }
+
+  function KanbanPage() {
+    return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Kanban tab — coming in Phase C");
+  }
+  function SettingsPage() {
+    return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Settings tab — placeholder");
+  }
 
   function RexLoopPage() {
     return React.createElement("div", {
