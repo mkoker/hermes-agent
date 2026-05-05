@@ -372,3 +372,67 @@ async def tickfile(name: str, tick_id: str):
         "size": p.stat().st_size,
         "sections": sections,
     }
+
+
+# ============================================================================
+# Kanban endpoints (Subsystem C)
+# ============================================================================
+KANBAN_ROOT = Path(_os.environ.get("REX_LOOP_KANBAN_ROOT", "/home/ubuntu/.hermes/kanban"))
+
+import kanban_store
+from pydantic import BaseModel
+
+
+class CardCreate(BaseModel):
+    title: str
+    tag: str | None = None
+    body: str | None = None
+
+
+class CardPatch(BaseModel):
+    title: str | None = None
+    tag: str | None = None
+    status: str | None = None
+    needs_review: bool | None = None
+
+
+@router.get("/kanban/cards")
+async def kanban_list_cards():
+    return kanban_store.list_cards(kanban_dir=KANBAN_ROOT)
+
+
+@router.post("/kanban/cards")
+async def kanban_create_card(payload: CardCreate):
+    if not payload.title.strip():
+        raise HTTPException(400, "title required")
+    return kanban_store.create_card(
+        kanban_dir=KANBAN_ROOT, title=payload.title.strip(),
+        tag=payload.tag, body=payload.body or "",
+    )
+
+
+@router.patch("/kanban/cards/{card_id}")
+async def kanban_patch_card(card_id: str, payload: CardPatch):
+    fields = payload.model_dump(exclude_none=True)
+    if not fields:
+        raise HTTPException(400, "no fields to patch")
+    try:
+        if "status" in fields:
+            new_status = fields.pop("status")
+            return kanban_store.update_status(
+                kanban_dir=KANBAN_ROOT, card_id=card_id,
+                new_status=new_status, actor="ui", **fields,
+            )
+        return kanban_store.update_card(
+            kanban_dir=KANBAN_ROOT, card_id=card_id, actor="ui", **fields,
+        )
+    except FileNotFoundError:
+        raise HTTPException(404, "card not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@router.delete("/kanban/cards/{card_id}")
+async def kanban_delete_card(card_id: str):
+    kanban_store.delete_card(kanban_dir=KANBAN_ROOT, card_id=card_id, actor="ui")
+    return {"deleted": card_id}

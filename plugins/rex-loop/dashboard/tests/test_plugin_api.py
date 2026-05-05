@@ -266,3 +266,56 @@ def test_tickfile_endpoint_404_when_missing(app):
     client = TestClient(a2)
     r = client.get("/missions/nope/tickfile/99")
     assert r.status_code == 404
+
+def test_kanban_create_then_list(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+
+    r = client.post("/kanban/cards", json={"title": "Idea one", "tag": "infra"})
+    assert r.status_code == 200
+    cid = r.json()["id"]
+
+    r = client.get("/kanban/cards")
+    assert r.status_code == 200
+    cards = r.json()
+    assert len(cards) == 1
+    assert cards[0]["id"] == cid
+    assert cards[0]["status"] == "inbox"
+
+
+def test_kanban_patch_status(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+
+    r = client.post("/kanban/cards", json={"title": "X"})
+    cid = r.json()["id"]
+
+    r = client.patch(f"/kanban/cards/{cid}", json={"status": "backlog"})
+    assert r.status_code == 200
+    assert r.json()["status"] == "backlog"
+
+
+def test_kanban_delete(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+    r = client.post("/kanban/cards", json={"title": "Z"})
+    cid = r.json()["id"]
+    r = client.delete(f"/kanban/cards/{cid}")
+    assert r.status_code == 200
+    r = client.get("/kanban/cards")
+    assert r.json() == []
