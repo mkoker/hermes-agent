@@ -417,3 +417,84 @@ def test_streams_endpoint_filter_by_kind(app, monkeypatch, tmp_path):
         r = c.get("/streams?kind=pm")
         assert r.status_code == 200
         assert [s["id"] for s in r.json()] == ["p1"]
+
+
+def test_streams_events_snapshot_returns_existing_lines(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    streams_root = tmp_path / "streams"
+    streams_root.mkdir()
+    log = tmp_path / "x.stream.log"
+    log.write_text("hello\nworld\n")
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    import importlib, stream_registry, plugin_api
+    importlib.reload(stream_registry)
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    stream_registry.register(stream_id="s1", kind="mission",
+                             instance="foo", log_path=str(log),
+                             pid=os.getpid(), model_hint="codex")
+    stream_registry.patch(stream_id="s1", status="done", exit_code=0)
+    with TestClient(a2) as c:
+        r = c.get("/streams/s1/events?follow=false")
+        assert r.status_code == 200
+        body = r.text
+        assert "event: snapshot" in body
+        assert "hello" in body
+        assert "world" in body
+        assert "event: status" in body
+        # Ensure the SSE content-type
+        assert r.headers["content-type"].startswith("text/event-stream")
+
+
+def test_streams_events_replay_with_last_event_id(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    streams_root = tmp_path / "streams"; streams_root.mkdir()
+    log = tmp_path / "x.stream.log"
+    log.write_text("a\nb\nc\nd\ne\n")
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    import importlib, stream_registry, plugin_api
+    importlib.reload(stream_registry); importlib.reload(plugin_api)
+    a2 = FastAPI(); a2.include_router(plugin_api.router)
+    stream_registry.register(stream_id="s1", kind="mission",
+                             instance="foo", log_path=str(log),
+                             pid=os.getpid(), model_hint="codex")
+    stream_registry.patch(stream_id="s1", status="done", exit_code=0)
+    with TestClient(a2) as c:
+        r = c.get("/streams/s1/events", headers={"Last-Event-Id": "2"})
+        assert r.status_code == 200
+        body = r.text
+        # Snapshot event should NOT be present (replay path)
+        assert "event: snapshot" not in body
+        # Lines 3, 4, 5 (c, d, e) should be there
+        assert '"text": "c"' in body
+        assert '"text": "d"' in body
+        assert '"text": "e"' in body
+        # Lines 1, 2 should NOT (we said since 2)
+        assert '"text": "a"' not in body
+        assert '"text": "b"' not in body
+        # Status closer
+        assert "event: status" in body
+
+
+def test_streams_events_follow_false_short_circuits_running(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    streams_root = tmp_path / "streams"; streams_root.mkdir()
+    log = tmp_path / "x.stream.log"
+    log.write_text("hi\n")
+    monkeypatch.setenv("REX_STREAMS_ROOT", str(streams_root))
+    import importlib, stream_registry, plugin_api
+    importlib.reload(stream_registry); importlib.reload(plugin_api)
+    a2 = FastAPI(); a2.include_router(plugin_api.router)
+    stream_registry.register(stream_id="s1", kind="mission",
+                             instance="foo", log_path=str(log),
+                             pid=os.getpid(), model_hint="codex")
+    # Leave status=running — follow=false should still return snapshot then close
+    with TestClient(a2) as c:
+        r = c.get("/streams/s1/events?follow=false")
+        assert r.status_code == 200
+        body = r.text
+        assert "event: snapshot" in body
+        assert "hi" in body
+        # No status event for running stream when follow=false (status only
+        # fires when stream actually ends)

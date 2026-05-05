@@ -519,3 +519,98 @@ async def kanban_promote(card_id: str):
 async def streams_list(status: str | None = Query(None),
                        kind: str | None = Query(None)):
     return stream_registry.list_streams(status=status, kind=kind)
+
+
+from fastapi.responses import StreamingResponse
+from fastapi import Header
+import sse
+
+
+@router.get("/streams/{stream_id}/events")
+async def streams_events(stream_id: str,
+                         snapshot: int = Query(200, ge=1, le=2000),
+                         follow: bool = Query(True),
+                         last_event_id: str | None = Header(None,
+                                                            alias="Last-Event-Id")):
+    entries = stream_registry.list_streams()
+    entry = next((s for s in entries if s["id"] == stream_id), None)
+    if entry is None:
+        raise HTTPException(404, "stream not found")
+    log_path = Path(entry["log_path"])
+
+    since_id = None
+    if last_event_id and last_event_id.isdigit():
+        since_id = int(last_event_id)
+
+    def gen():
+        # Snapshot or replay
+        if since_id is None:
+            # Initial snapshot batch as a single event
+            snap_lines = list(sse.tail_file_lines(
+                log_path, snapshot_lines=snapshot,
+                since_id=None, follow=False))
+            if snap_lines:
+                payload = _json_mod.dumps({
+                    "lines": [{"id": i, "text": t} for i, t in snap_lines],
+                })
+                yield sse.format_event(event="snapshot", data=payload,
+                                       event_id=snap_lines[-1][0])
+            start_after = snap_lines[-1][0] if snap_lines else None
+        else:
+            start_after = since_id
+
+        # Status check before opening tail loop — completed streams short-circuit
+        if entry["status"] != "running":
+            # Replay any new lines past start_after, then emit status, close.
+            if start_after is not None:
+                for i, t in sse.tail_file_lines(log_path,
+                                                snapshot_lines=0,
+                                                since_id=start_after,
+                                                follow=False):
+                    yield sse.format_event(event="line",
+                                           data=_json_mod.dumps({"id": i, "text": t}),
+                                           event_id=i)
+            yield sse.format_event(
+                event="status",
+                data=_json_mod.dumps({"status": entry["status"],
+                                      "exit_code": entry.get("exit_code")}),
+                event_id=None)
+            return
+
+        # Honor follow=false for running streams — caller wants a snapshot only.
+        if not follow:
+            return
+
+        # Live tail. Heartbeat every 25s by yielding from a wrapper.
+        import time as _time
+        last_heartbeat = _time.time()
+        for i, t in sse.tail_file_lines(log_path,
+                                         snapshot_lines=0,
+                                         since_id=start_after,
+                                         follow=True):
+            if i == 0:  # heartbeat sentinel from idle tick
+                if _time.time() - last_heartbeat > 25:
+                    yield ": keepalive\n\n"
+                    last_heartbeat = _time.time()
+            else:
+                yield sse.format_event(event="line",
+                                       data=_json_mod.dumps({"id": i, "text": t}),
+                                       event_id=i)
+                last_heartbeat = _time.time()  # any line resets heartbeat clock
+            # Re-check status to see if stream has ended (every iteration is fine —
+            # idle ticks happen at 1s, so this is at most 1Hz registry reads on quiet
+            # streams)
+            latest = stream_registry.list_streams()
+            latest_entry = next((s for s in latest if s["id"] == stream_id),
+                                None)
+            if latest_entry and latest_entry["status"] != "running":
+                yield sse.format_event(
+                    event="status",
+                    data=_json_mod.dumps({"status": latest_entry["status"],
+                                          "exit_code": latest_entry.get("exit_code")}),
+                    event_id=None)
+                return
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache",
+                                      "X-Accel-Buffering": "no"})

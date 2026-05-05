@@ -31,8 +31,11 @@ def tail_file_lines(path: Path, *, snapshot_lines: int,
     - If since_id is None: yield up to last `snapshot_lines` lines.
     - If since_id is N: yield lines with id > N (full read).
     - Yields stripped lines (no trailing \\n).
-    - When follow=True: blocks via watchfiles until new lines append.
-      Pass stop_event to interrupt the follow loop (used for client-disconnect
+    - When follow=True: blocks via watchfiles. Yields (0, "") on idle ticks
+      so callers can emit SSE heartbeats. yields (-1, str(exception)) is NOT used —
+      errors propagate normally. File deletion mid-tail terminates the iterator
+      cleanly (no exception).
+    - Pass stop_event to interrupt the follow loop (used for client-disconnect
       cleanup in SSE callers). When stop_event is set, the generator exits
       cleanly on the next file event or rust_timeout (1s).
     - File must exist at call time; created-later files are not detected.
@@ -61,10 +64,17 @@ def tail_file_lines(path: Path, *, snapshot_lines: int,
     # Tail mode — use watchfiles
     from watchfiles import watch  # lazy import
     for changes in watch(str(path), stop_event=stop_event,
-                         rust_timeout=1000, yield_on_timeout=False):
-        # Re-read tail past last_id
-        with path.open("r", errors="replace") as f:
-            new = f.read().splitlines()
+                         rust_timeout=1000, yield_on_timeout=True):
+        if not changes:
+            # Idle tick — yield sentinel for callers that want to heartbeat.
+            yield (0, "")
+            continue
+        # File change — re-read tail past last_id
+        try:
+            with path.open("r", errors="replace") as f:
+                new = f.read().splitlines()
+        except FileNotFoundError:
+            return  # log file removed/rotated — terminate cleanly
         for i, line in enumerate(new[last_id:], start=last_id + 1):
             yield (i, line)
         last_id = len(new)
