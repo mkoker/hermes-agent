@@ -502,53 +502,85 @@
       return earliest ? Math.floor((Date.now() - earliest) / 1000) : null;
     }, [missions]);
 
+    const tokensTodaySum = safeNum(tokensToday && (tokensToday["in"] + tokensToday.out));
+    const tokensTotalSum = safeNum(tokensTotal && (tokensTotal["in"] + tokensTotal.out));
+
     return React.createElement("header", {
       style: {
-        display: "grid",
-        gridTemplateColumns: "auto 1fr auto",
-        alignItems: "center",
-        gap: 24,
-        padding: "12px 20px",
+        display: "flex",
+        alignItems: "stretch",
+        gap: 0,
+        padding: "0",
         borderBottom: "1px solid " + C.border,
-        background: "linear-gradient(180deg, " + C.bg + " 0%, rgba(0,8,20,0.92) 100%)",
+        background: "linear-gradient(180deg, rgba(0,8,20,0.95) 0%, rgba(0,12,28,0.92) 100%)",
       },
     },
-      // Brand
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
-        React.createElement("div", {
-          style: {
-            width: 28, height: 28, borderRadius: 2,
-            background: C.accent, color: C.bg,
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: FONT.mono, fontWeight: 800, fontSize: 14,
-          },
-        }, "R"),
-        React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
-          React.createElement("span", { className: "rex-chrome", style: { fontSize: 13, color: C.text, letterSpacing: "0.3em", fontWeight: 700 } }, "REX // LOOP"),
-          React.createElement("span", { className: "rex-mono", style: { fontSize: 9, color: C.textDim, letterSpacing: "0.2em" } }, "WAR ROOM · v4"),
-        ),
-      ),
-      // Stats row
+      // Stats row — fills available width, each stat in its own bordered cell
       React.createElement("div", {
-        style: { display: "grid", gridTemplateColumns: "repeat(6, minmax(0, 1fr))", gap: 18, justifyItems: "start" },
+        style: {
+          flex: 1,
+          display: "grid",
+          gridTemplateColumns: "repeat(6, minmax(0, 1fr))",
+        },
       },
-        React.createElement(Stat, { label: "Loop Uptime",      value: loopUptime != null ? fmtDuration(loopUptime) : "—" }),
-        React.createElement(Stat, { label: "Ticks Today",      value: ticksToday, color: C.accent }),
-        React.createElement(Stat, { label: "Agent Time Today", value: fmtDuration(agentTimeToday) }),
-        React.createElement(Stat, { label: "Tokens Today",     value: fmtTokens(safeNum(tokensToday && (tokensToday["in"] + tokensToday.out))), color: C.success }),
-        React.createElement(Stat, { label: "Total Tokens",     value: fmtTokens(safeNum(tokensTotal && (tokensTotal["in"] + tokensTotal.out))) }),
-        React.createElement(Stat, { label: "Fails 24h",        value: fails24h, color: fails24h > 0 ? C.error : C.success }),
+        React.createElement(HeaderStat, { label: "Loop Uptime",      value: loopUptime != null ? fmtDuration(loopUptime) : "—" }),
+        React.createElement(HeaderStat, { label: "Ticks Today",      value: ticksToday, color: ticksToday > 0 ? C.accent : C.textDim }),
+        React.createElement(HeaderStat, { label: "Agent Time",       value: agentTimeToday > 0 ? fmtDuration(agentTimeToday) : "—" }),
+        React.createElement(HeaderStat, { label: "Tokens Today",     value: tokensTodaySum > 0 ? fmtTokens(tokensTodaySum) : "—", color: tokensTodaySum > 0 ? C.success : C.textDim }),
+        React.createElement(HeaderStat, { label: "Total Tokens",     value: tokensTotalSum > 0 ? fmtTokens(tokensTotalSum) : "—" }),
+        React.createElement(HeaderStat, { label: "Fails 24h",        value: fails24h, color: fails24h > 0 ? C.error : C.success }),
       ),
-      // Pause
-      React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 12 } },
-        pause.paused
-          ? React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.error, letterSpacing: "0.22em" } }, "ALL LOOPS PAUSED")
-          : React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.success, letterSpacing: "0.22em" } }, "RUNNING"),
+      // Status + Pause cluster
+      React.createElement("div", {
+        style: {
+          display: "flex", alignItems: "center", gap: 12,
+          padding: "0 18px", borderLeft: "1px solid " + C.border,
+          minWidth: 280,
+          background: pause.paused ? "rgba(230,57,70,0.06)" : "transparent",
+        },
+      },
+        React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 2, flex: 1 } },
+          React.createElement("span", {
+            className: "rex-chrome",
+            style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" },
+          }, "STATUS"),
+          React.createElement("span", {
+            className: "rex-chrome",
+            style: { fontSize: 12, color: pause.paused ? C.error : C.success, letterSpacing: "0.22em", fontWeight: 700 },
+          }, pause.paused ? "ALL PAUSED" : "RUNNING"),
+          React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } }, tzNow()),
+        ),
         React.createElement(IconButton, {
           onClick: pause.toggle, danger: !pause.paused,
-        }, pause.paused ? "RESUME ALL" : "PAUSE ALL"),
-        React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginLeft: 8 } }, tzNow()),
+        }, pause.paused ? "RESUME" : "PAUSE"),
       ),
+    );
+  }
+
+  // Header-cell variant of Stat — bordered, taller, more legible than the
+  // generic Stat primitive used inside panels.
+  function HeaderStat(props) {
+    const color = props.color || C.text;
+    return React.createElement("div", {
+      style: {
+        display: "flex", flexDirection: "column", gap: 4,
+        padding: "12px 16px",
+        borderRight: "1px solid " + C.border,
+        minWidth: 0,
+      },
+    },
+      React.createElement("span", {
+        className: "rex-chrome",
+        style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em", fontWeight: 600 },
+      }, props.label),
+      React.createElement("span", {
+        className: "rex-mono",
+        style: {
+          fontSize: 22, color: color, fontVariantNumeric: "tabular-nums",
+          lineHeight: 1, fontWeight: 600,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        },
+      }, props.value),
     );
   }
 
@@ -576,33 +608,55 @@
       return Math.max(0, Math.floor(remaining / 86400));
     }, [m.started_at, m.max_days]);
 
+    const tickCount = m.tick_count || 0;
+    const stateColor = isLive ? C.accent : (m.status === "active" ? C.success : (m.status === "expired" ? C.muted : C.textDim));
+
     return React.createElement(Panel, {
       onClick: function () { props.onSelect(m.name); },
-      accent: isSelected ? C.accent : (isLive ? C.accent + "88" : C.border),
+      accent: isSelected ? C.accent : (isLive ? C.accent : C.border),
       className: isLive ? "rex-pulse-yellow" : null,
       style: {
-        cursor: "pointer", marginBottom: 8,
-        transition: "border-color 0.2s",
-        background: isSelected ? "rgba(255,214,10,0.08)" : C.surface,
+        cursor: "pointer", marginBottom: 6, padding: "10px 12px",
+        transition: "border-color 0.2s, background 0.2s",
+        background: isSelected ? "rgba(255,214,10,0.06)" : C.surface,
+        borderLeft: "3px solid " + stateColor,
       },
     },
-      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 } },
-        React.createElement("div", { style: { display: "flex", flexDirection: "column", minWidth: 0, flex: 1 } },
+      React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 } },
+        // Title row
+        React.createElement("div", {
+          style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 },
+        },
           React.createElement("span", {
             className: "rex-mono",
-            style: { fontSize: 12, fontWeight: 700, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+            style: {
+              fontSize: 12, fontWeight: 700, color: C.text,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1, minWidth: 0,
+            },
           }, m.name),
+          isLive
+            ? React.createElement("span", {
+                className: "rex-chrome",
+                style: { fontSize: 9, color: C.accent, letterSpacing: "0.2em", fontWeight: 700, flexShrink: 0 },
+              }, "▶ LIVE")
+            : null,
+        ),
+        // Meta row — ticks · days left · sparkline (only if enough data)
+        React.createElement("div", {
+          style: { display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" },
+        },
           React.createElement("span", {
             className: "rex-mono",
-            style: { fontSize: 10, color: C.textDim, marginTop: 2 },
-          }, (m.tick_count || 0) + " ticks · " + (daysLeft != null ? daysLeft + "d left" : "no cap")),
+            style: { fontSize: 10, color: C.textDim },
+          },
+            tickCount + (tickCount === 1 ? " tick" : " ticks") +
+            (daysLeft != null ? " · " + daysLeft + "d left" : "")),
+          sparkValues.length >= 2
+            ? React.createElement(Sparkline, {
+                values: sparkValues, width: 80, height: 12, color: isLive ? C.accent : C.info,
+              })
+            : null,
         ),
-        React.createElement(StatusPill, { status: isLive ? "running" : m.status }),
-      ),
-      React.createElement("div", { style: { marginTop: 8 } },
-        React.createElement(Sparkline, {
-          values: sparkValues, width: 200, height: 14, color: isLive ? C.accent : C.info,
-        }),
       ),
     );
   }
@@ -878,14 +932,32 @@
   function BigTokens(props) {
     const inN = safeNum(props.in);
     const outN = safeNum(props.out);
-    return React.createElement(Panel, null,
-      React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em" } }, props.label),
-      React.createElement("div", { style: { display: "flex", gap: 16, marginTop: 6, alignItems: "baseline" } },
-        React.createElement("span", { className: "rex-mono", style: { fontSize: 28, color: C.text, fontVariantNumeric: "tabular-nums", lineHeight: 1 } }, fmtTokens(inN + outN)),
-        React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } },
-          "in " + fmtTokens(inN) + " · out " + fmtTokens(outN)),
-      ),
-      props.sub ? React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginTop: 4, display: "block" } }, props.sub) : null,
+    const total = inN + outN;
+    const empty = total === 0;
+    return React.createElement(Panel, { padding: "10px 12px" },
+      React.createElement("span", {
+        className: "rex-chrome",
+        style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em", fontWeight: 600 },
+      }, props.label),
+      empty
+        ? React.createElement("div", {
+            className: "rex-mono",
+            style: { marginTop: 8, fontSize: 11, color: C.textDim, fontStyle: "italic" },
+          }, "no data yet")
+        : React.createElement("div", { style: { display: "flex", gap: 14, marginTop: 6, alignItems: "baseline" } },
+            React.createElement("span", {
+              className: "rex-mono",
+              style: { fontSize: 28, color: C.text, fontVariantNumeric: "tabular-nums", lineHeight: 1, fontWeight: 600 },
+            }, fmtTokens(total)),
+            React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } },
+              "in " + fmtTokens(inN) + " · out " + fmtTokens(outN)),
+          ),
+      props.sub && !empty
+        ? React.createElement("span", {
+            className: "rex-mono",
+            style: { fontSize: 10, color: C.textDim, marginTop: 4, display: "block" },
+          }, props.sub)
+        : null,
     );
   }
 
@@ -984,62 +1056,87 @@
   }
 
   // ---------- CronStrip ----------
-  function CronStrip(props) {
-    const { lines, missions, filter, onFilterChange } = props;
-    const filtered = useMemo(function () {
-      if (!filter || filter === "ALL") return lines;
-      return lines.filter(function (l) { return l.mission === filter; });
-    }, [lines, filter]);
+  // The /cron-stream endpoint returns plain strings (not {ts, mission, level} objects);
+  // we parse the leading "[ISO_TS]" and color-code by content keywords.
+  const _TS_RE = /^\[([0-9T:+\-Z. ]+)\]\s+(.*)$/;
 
+  function classifyCronLine(s) {
+    const t = s.toLowerCase();
+    if (t.indexOf("fail") >= 0 || t.indexOf("error") >= 0 || t.indexOf("rc=1") >= 0) return { color: C.error, icon: "✗" };
+    if (t.indexOf("skip") >= 0 || t.indexOf("preflight refused") >= 0)               return { color: C.muted, icon: "·" };
+    if (t.indexOf("tick start") >= 0 || t.indexOf("scope-start") >= 0)               return { color: C.accent, icon: "▶" };
+    if (t.indexOf(" ok ") >= 0 || t.indexOf("rc=0") >= 0 || t.indexOf("scope-end") >= 0) return { color: C.success, icon: "✓" };
+    if (t.indexOf("pause") >= 0)                                                     return { color: C.error, icon: "⏸" };
+    return { color: C.textDim, icon: " " };
+  }
+
+  function parseCronLine(s) {
+    const m = _TS_RE.exec(s);
+    return m ? { ts: m[1], body: m[2] } : { ts: null, body: s };
+  }
+
+  function CronStrip(props) {
+    const { lines } = props;
     const scrollRef = useRef(null);
     useEffect(function () {
       const el = scrollRef.current;
       if (!el) return;
-      // Auto-scroll to bottom on new lines if user is already near the bottom
       const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
       if (nearBottom) el.scrollTop = el.scrollHeight;
-    }, [filtered.length]);
+    }, [lines.length]);
 
     return React.createElement("section", {
       style: {
         borderTop: "1px solid " + C.border,
-        background: C.surfaceLo,
-        padding: "6px 12px 8px",
-        display: "flex", flexDirection: "column", gap: 4,
-        height: 180, minHeight: 180,
+        background: "rgba(0,8,20,0.55)",
+        display: "flex", flexDirection: "column",
+        height: 160, minHeight: 160,
       },
     },
-      // Filter pills
-      React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" } },
-        React.createElement("span", { className: "rex-chrome", style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" } }, "CRON STREAM"),
-        ["ALL"].concat((missions || []).map(function (m) { return m.name; })).map(function (name) {
-          const isActive = (filter || "ALL") === name;
-          return React.createElement("button", {
-            key: name, onClick: function () { onFilterChange(name); },
-            style: {
-              padding: "2px 8px", borderRadius: 2,
-              border: "1px solid " + (isActive ? C.accent : C.border),
-              background: isActive ? C.accent + "22" : "transparent",
-              color: isActive ? C.accent : C.textDim,
-              fontFamily: FONT.mono, fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase",
-              cursor: "pointer",
-            },
-          }, name);
-        }),
+      // Header bar
+      React.createElement("div", {
+        style: {
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "6px 12px", borderBottom: "1px solid " + C.border, flexShrink: 0,
+        },
+      },
+        React.createElement("span", {
+          className: "rex-chrome",
+          style: { fontSize: 10, color: C.textDim, letterSpacing: "0.24em", fontWeight: 600 },
+        }, "CRON STREAM"),
+        React.createElement("span", {
+          className: "rex-mono",
+          style: { fontSize: 10, color: C.textDim },
+        }, lines.length + (lines.length === 1 ? " event" : " events")),
       ),
       // Stream
       React.createElement("div", {
         ref: scrollRef, className: "rex-scroll",
-        style: { flex: 1, overflowY: "auto", fontFamily: FONT.mono, fontSize: 10, lineHeight: 1.4 },
+        style: {
+          flex: 1, overflowY: "auto", padding: "4px 12px 8px",
+          fontFamily: FONT.mono, fontSize: 11, lineHeight: 1.5,
+        },
       },
-        filtered.length === 0
-          ? React.createElement("span", { style: { color: C.textDim } }, "(no events yet)")
-          : filtered.map(function (l, i) {
-              const color = l.level === "error" ? C.error : (l.level === "warn" ? C.accent : C.text);
-              return React.createElement("div", { key: i, style: { color: color, display: "flex", gap: 8 } },
-                React.createElement("span", { style: { color: C.textDim, minWidth: 80 } }, tzFormat(l.ts, { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })),
-                l.mission ? React.createElement("span", { style: { color: C.info, minWidth: 140 } }, l.mission) : null,
-                React.createElement("span", { style: { whiteSpace: "pre-wrap", wordBreak: "break-word" } }, l.message || ""),
+        lines.length === 0
+          ? React.createElement("span", { style: { color: C.textDim, fontSize: 10 } }, "// no cron events yet")
+          : lines.map(function (raw, i) {
+              const s = String(raw);
+              const cls = classifyCronLine(s);
+              const parsed = parseCronLine(s);
+              return React.createElement("div", {
+                key: i,
+                style: {
+                  display: "grid", gridTemplateColumns: "16px 90px 1fr",
+                  gap: 8, color: cls.color, alignItems: "baseline",
+                },
+              },
+                React.createElement("span", { style: { color: cls.color, opacity: 0.85, textAlign: "center" } }, cls.icon),
+                React.createElement("span", {
+                  style: { color: C.textDim, fontSize: 10, fontVariantNumeric: "tabular-nums" },
+                }, parsed.ts ? tzFormat(parsed.ts, { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : "—"),
+                React.createElement("span", {
+                  style: { whiteSpace: "pre-wrap", wordBreak: "break-word" },
+                }, parsed.body),
               );
             }),
       ),
@@ -1302,16 +1399,58 @@
     const m = props.mission;
     const next = m.next_tick_at ? new Date(m.next_tick_at).getTime() : null;
     const remaining = next ? Math.max(0, Math.floor((next - Date.now()) / 1000)) : null;
-    return React.createElement(Panel, { style: { marginBottom: 8 } },
-      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 } },
-        React.createElement("div", { style: { display: "flex", flexDirection: "column" } },
-          React.createElement("span", { className: "rex-mono", style: { fontSize: 12, color: C.text, fontWeight: 700 } }, m.name),
-          React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, marginTop: 2 } },
-            "IDLE · last tick #" + (m.tick_count || 0) +
-            (m.last_gate_state ? " · gate " + m.last_gate_state : "") +
-            (remaining != null ? " · next in " + fmtDuration(remaining) : "")),
+    const lastTick = (m.ticks_summary && m.ticks_summary.length)
+      ? m.ticks_summary[m.ticks_summary.length - 1]
+      : null;
+    const lastResult = lastTick
+      ? (lastTick.state === "done" ? { color: C.success, label: "✓ done" }
+        : lastTick.state === "failed" ? { color: C.error, label: "✗ failed" }
+        : { color: C.muted, label: lastTick.state || "—" })
+      : null;
+    const lastTickRel = lastTick && lastTick.started_at ? relTime(lastTick.started_at) : null;
+
+    return React.createElement(Panel, {
+      style: { padding: "10px 12px", borderLeft: "3px solid " + C.muted },
+    },
+      // Title row
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+      },
+        React.createElement("span", {
+          className: "rex-mono",
+          style: { fontSize: 12, color: C.text, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+        }, m.name),
+        React.createElement("span", {
+          className: "rex-chrome",
+          style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" },
+        }, "IDLE"),
+      ),
+      // Stats grid: ticks · last result · next tick
+      React.createElement("div", {
+        style: {
+          display: "grid", gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 12, marginTop: 8, fontSize: 10,
+        },
+      },
+        // Ticks
+        React.createElement("div", { className: "rex-mono", style: { display: "flex", flexDirection: "column", gap: 2 } },
+          React.createElement("span", { style: { color: C.textDim, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" } }, "ticks"),
+          React.createElement("span", { style: { color: C.text, fontSize: 12, fontVariantNumeric: "tabular-nums" } }, m.tick_count || 0),
         ),
-        React.createElement(StatusPill, { status: "idle" }),
+        // Last result
+        React.createElement("div", { className: "rex-mono", style: { display: "flex", flexDirection: "column", gap: 2 } },
+          React.createElement("span", { style: { color: C.textDim, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" } }, "last"),
+          lastResult
+            ? React.createElement("span", { style: { color: lastResult.color, fontSize: 11 } },
+                lastResult.label + (lastTickRel ? " · " + lastTickRel : ""))
+            : React.createElement("span", { style: { color: C.textDim, fontSize: 11 } }, "no ticks yet"),
+        ),
+        // Next tick
+        React.createElement("div", { className: "rex-mono", style: { display: "flex", flexDirection: "column", gap: 2 } },
+          React.createElement("span", { style: { color: C.textDim, fontSize: 9, letterSpacing: "0.18em", textTransform: "uppercase" } }, "next"),
+          React.createElement("span", { style: { color: remaining != null ? C.info : C.textDim, fontSize: 11 } },
+            remaining != null ? "in " + fmtDuration(remaining) : "—"),
+        ),
       ),
     );
   }
@@ -1341,7 +1480,6 @@
     const byHourState      = useTokensByHour(24);
 
     const cronLines = useCronStream();
-    const [cronFilter, setCronFilter] = useState("ALL");
 
     const pause = useGlobalPause();
 
@@ -1364,7 +1502,7 @@
         }),
         React.createElement("main", {
           className: "rex-scroll",
-          style: { padding: "12px 16px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 },
+          style: { padding: "14px 16px", overflowY: "auto", display: "flex", flexDirection: "column", gap: 12 },
         },
           // Live agent panel (only if there's an actively running tick)
           active
@@ -1376,9 +1514,31 @@
           active
             ? React.createElement(TickFileViewer, { tickfile: tickfileState.data })
             : null,
-          // Idle banners for non-running missions
-          missions.filter(function (m) { return m.status === "active" && (!m.current_tick || m.current_tick.state !== "running"); })
-            .map(function (m) { return React.createElement(IdleBanner, { key: m.name, mission: m }); }),
+          // No-live-tick state banner (only when nothing is running)
+          !active && missions.length > 0
+            ? React.createElement("div", {
+                style: {
+                  padding: "10px 14px", border: "1px dashed " + C.border, borderRadius: 4,
+                  background: "rgba(255,255,255,0.01)",
+                  display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+                },
+              },
+                React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: C.textDim, letterSpacing: "0.22em" } },
+                  "▌ NO TICK CURRENTLY RUNNING"),
+                React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } },
+                  missions.filter(function (m) { return m.status === "active"; }).length + " active missions waiting on cron"),
+              )
+            : null,
+          // Idle banners for non-running missions — grid layout when no live tick
+          !active
+            ? React.createElement("div", {
+                style: { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 },
+              },
+                missions.filter(function (m) { return m.status === "active" && (!m.current_tick || m.current_tick.state !== "running"); })
+                  .map(function (m) { return React.createElement(IdleBanner, { key: m.name, mission: m }); }),
+              )
+            : missions.filter(function (m) { return m.status === "active" && (!m.current_tick || m.current_tick.state !== "running"); })
+                .map(function (m) { return React.createElement(IdleBanner, { key: m.name, mission: m }); }),
           // Empty state
           missions.length === 0 && !missionsState.loading
             ? React.createElement(Panel, null,
@@ -1390,9 +1550,7 @@
           today: tokensTodayState.data, total: tokensTotalState.data, byRole: byRoleState.data, byHour: byHourState.data,
         }),
       ),
-      React.createElement(CronStrip, {
-        lines: cronLines, missions: missions, filter: cronFilter, onFilterChange: setCronFilter,
-      }),
+      React.createElement(CronStrip, { lines: cronLines }),
     );
   }
 
