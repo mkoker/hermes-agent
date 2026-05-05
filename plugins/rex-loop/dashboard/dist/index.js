@@ -919,6 +919,69 @@
     );
   }
 
+  // ---------- CronStrip ----------
+  function CronStrip(props) {
+    const { lines, missions, filter, onFilterChange } = props;
+    const filtered = useMemo(function () {
+      if (!filter || filter === "ALL") return lines;
+      return lines.filter(function (l) { return l.mission === filter; });
+    }, [lines, filter]);
+
+    const scrollRef = useRef(null);
+    useEffect(function () {
+      const el = scrollRef.current;
+      if (!el) return;
+      // Auto-scroll to bottom on new lines if user is already near the bottom
+      const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      if (nearBottom) el.scrollTop = el.scrollHeight;
+    }, [filtered.length]);
+
+    return React.createElement("section", {
+      style: {
+        borderTop: "1px solid " + C.border,
+        background: C.surfaceLo,
+        padding: "6px 12px 8px",
+        display: "flex", flexDirection: "column", gap: 4,
+        height: 180, minHeight: 180,
+      },
+    },
+      // Filter pills
+      React.createElement("div", { style: { display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" } },
+        React.createElement("span", { className: "rex-chrome", style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" } }, "CRON STREAM"),
+        ["ALL"].concat((missions || []).map(function (m) { return m.name; })).map(function (name) {
+          const isActive = (filter || "ALL") === name;
+          return React.createElement("button", {
+            key: name, onClick: function () { onFilterChange(name); },
+            style: {
+              padding: "2px 8px", borderRadius: 2,
+              border: "1px solid " + (isActive ? C.accent : C.border),
+              background: isActive ? C.accent + "22" : "transparent",
+              color: isActive ? C.accent : C.textDim,
+              fontFamily: FONT.mono, fontSize: 9, letterSpacing: "0.15em", textTransform: "uppercase",
+              cursor: "pointer",
+            },
+          }, name);
+        }),
+      ),
+      // Stream
+      React.createElement("div", {
+        ref: scrollRef, className: "rex-scroll",
+        style: { flex: 1, overflowY: "auto", fontFamily: FONT.mono, fontSize: 10, lineHeight: 1.4 },
+      },
+        filtered.length === 0
+          ? React.createElement("span", { style: { color: C.textDim } }, "(no events yet)")
+          : filtered.map(function (l, i) {
+              const color = l.level === "error" ? C.error : (l.level === "warn" ? C.accent : C.text);
+              return React.createElement("div", { key: i, style: { color: color, display: "flex", gap: 8 } },
+                React.createElement("span", { style: { color: C.textDim, minWidth: 80 } }, tzFormat(l.ts, { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })),
+                l.mission ? React.createElement("span", { style: { color: C.info, minWidth: 140 } }, l.mission) : null,
+                React.createElement("span", { style: { whiteSpace: "pre-wrap", wordBreak: "break-word" } }, l.message || ""),
+              );
+            }),
+      ),
+    );
+  }
+
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
   // ============================================================================
