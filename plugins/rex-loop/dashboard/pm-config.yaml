@@ -1,0 +1,22 @@
+# PM Hermes profile — the agent that scopes Inbox cards into mission specs.
+# Points at the local llama-proxy so it follows whichever model is currently loaded.
+
+model:
+  base_url: http://192.168.1.169:8081/v1
+  model_name: auto
+provider: openai
+non_interactive: true
+max_turns: 30
+
+# PM is allowed to read the missions tree and the active mission list, but should
+# not touch missions/, plugins/, or anything else outside the kanban scope.
+tools:
+  bash:
+    allowlist:
+      - "ls ~/.hermes/missions/"
+      - "cat ~/.hermes/missions/*/STATUS"
+      - "cat ~/.hermes/kanban/cards/*.md"
+  read:
+    allowlist:
+      - "/home/ubuntu/.hermes/missions/**"
+      - "/home/ubuntu/.hermes/kanban/**"
