@@ -9,7 +9,7 @@ import fcntl
 import json
 import os
 import warnings
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 STREAMS_ROOT = Path(os.environ.get("REX_STREAMS_ROOT",
@@ -128,3 +128,39 @@ def list_streams(*, status: str | None = None,
     if kind is not None:
         out = [s for s in out if s["kind"] == kind]
     return out
+
+
+GRACE_PERIOD_SECONDS = 3600  # 1h after ended_at before drop
+MAX_ENTRIES = 200
+
+
+def compact() -> dict:
+    """Drop stale ended entries; cap to MAX_ENTRIES newest-first."""
+    _ensure_root()
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(seconds=GRACE_PERIOD_SECONDS)
+
+    with LOCK_PATH.open("a") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        data = _load()
+        before = len(data["streams"])
+        kept = []
+        for s in data["streams"]:
+            if s["status"] == "running":
+                kept.append(s); continue
+            if not s.get("ended_at"):
+                kept.append(s); continue
+            try:
+                ended = datetime.strptime(s["ended_at"], "%Y-%m-%dT%H:%M:%SZ")                          .replace(tzinfo=timezone.utc)
+            except ValueError:
+                kept.append(s); continue
+            if ended >= cutoff:
+                kept.append(s)
+
+        # Newest first, cap to MAX_ENTRIES
+        kept.sort(key=lambda s: s.get("started_at", ""), reverse=True)
+        kept = kept[:MAX_ENTRIES]
+
+        data["streams"] = kept
+        _save(data)
+        return {"before": before, "after": len(kept)}

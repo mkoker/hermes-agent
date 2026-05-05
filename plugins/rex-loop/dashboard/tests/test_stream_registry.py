@@ -1,4 +1,5 @@
 """Tests for stream_registry."""
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 
@@ -94,3 +95,34 @@ def test_patch_with_no_updates_raises(registry):
                       log_path="/tmp/x", pid=1, model_hint="codex")
     with pytest.raises(ValueError, match="at least one of"):
         registry.patch(stream_id="x")
+
+
+def test_compact_keeps_running_entries(registry):
+    registry.register(stream_id="r1", kind="mission", instance="m",
+                      log_path="/x", pid=1, model_hint="codex")
+    registry.compact()
+    assert len(registry.list_streams()) == 1
+
+
+def test_compact_drops_done_entries_older_than_grace(registry, monkeypatch):
+    e = registry.register(stream_id="d1", kind="mission", instance="m",
+                          log_path="/x", pid=1, model_hint="codex")
+    registry.patch(stream_id="d1", status="done", exit_code=0)
+    # Force ended_at to 2h ago
+    data = json.loads(Path(registry.REGISTRY_PATH).read_text())
+    old = (datetime.now(timezone.utc) - timedelta(hours=2))\
+          .strftime("%Y-%m-%dT%H:%M:%SZ")
+    data["streams"][0]["ended_at"] = old
+    Path(registry.REGISTRY_PATH).write_text(json.dumps(data))
+    registry.compact()
+    assert registry.list_streams() == []
+
+
+def test_compact_caps_at_max_entries(registry):
+    for i in range(250):
+        e = registry.register(stream_id=f"x{i}", kind="mission", instance="m",
+                              log_path="/x", pid=1, model_hint="codex")
+        registry.patch(stream_id=f"x{i}", status="done", exit_code=0)
+    registry.compact()
+    out = registry.list_streams()
+    assert len(out) <= 200
