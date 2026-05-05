@@ -2147,6 +2147,71 @@
   }
 
   // ============================================================================
+  // 7.Y TELEGRAM TILE
+  // ============================================================================
+  function useTelegramSession() {
+    const recent = useApi("/telegram/recent?limit=1", 5000, []);
+    const sessionId = (recent.data && recent.data[0] && recent.data[0].id) || null;
+    const turns = useApi(sessionId ? "/telegram/" + encodeURIComponent(sessionId) + "/turns" : null,
+                         3000, [sessionId]);
+    return { sessionId: sessionId, turns: turns.data || [] };
+  }
+
+  function TelegramTile() {
+    const t = useTelegramSession();
+    const recent = (t.turns || []).slice(-20);
+    return React.createElement("div", {
+      style: {
+        display: "flex", flexDirection: "column",
+        background: C.surface, border: "1px solid " + C.border,
+        borderTop: "2px solid " + KIND_COLOR.telegram, borderRadius: 4,
+        minHeight: 240,
+      },
+    },
+      React.createElement("div", {
+        style: { padding: "8px 12px", borderBottom: "1px solid " + C.border,
+                 display: "flex", alignItems: "baseline", gap: 10,
+                 fontFamily: FONT.chrome, fontSize: 11, letterSpacing: "0.18em" },
+      },
+        React.createElement("span", { style: { color: KIND_COLOR.telegram, fontSize: 13 } }, KIND_ICON.telegram),
+        React.createElement("span", { style: { color: KIND_COLOR.telegram, fontWeight: 600 } }, "TELEGRAM"),
+        React.createElement("span", { style: { color: C.textDim, marginLeft: "auto" } },
+          recent.length + " turns"),
+      ),
+      React.createElement("div", {
+        style: { flex: 1, padding: "8px 12px", overflowY: "auto",
+                 maxHeight: 360, display: "flex", flexDirection: "column", gap: 6,
+                 background: C.bg, fontSize: 11, lineHeight: "1.45" },
+      },
+        recent.length === 0
+          ? React.createElement("span", { style: { color: C.textDim } }, "(no turns yet)")
+          : recent.map(function (turn, i) {
+              const isUser = turn.role === "user";
+              return React.createElement("div", {
+                key: i,
+                style: {
+                  alignSelf: isUser ? "flex-end" : "flex-start",
+                  maxWidth: "85%",
+                  padding: "6px 10px",
+                  borderRadius: 6,
+                  background: isUser ? "rgba(255,214,10,0.10)" : "rgba(255,255,255,0.04)",
+                  border: "1px solid " + (isUser ? "rgba(255,214,10,0.3)" : C.border),
+                  color: C.text, fontFamily: FONT.chrome, whiteSpace: "pre-wrap",
+                },
+              },
+                React.createElement("span", {
+                  style: { fontSize: 9, color: C.textDim, letterSpacing: "0.18em",
+                           display: "block", marginBottom: 2,
+                           fontFamily: FONT.chrome },
+                }, isUser ? "USER" : "REX"),
+                turn.content || ""
+              );
+            })
+      )
+    );
+  }
+
+  // ============================================================================
   // 8. ROOT
   // ============================================================================
   function AgentsPage() {
