@@ -2211,6 +2211,30 @@
     );
   }
 
+  function CronRibbonTile() {
+    const lines = useCronStream();
+    return React.createElement("div", {
+      style: {
+        background: C.surface, border: "1px solid " + C.border,
+        borderTop: "2px solid " + C.border, borderRadius: 4,
+        gridColumn: "1 / -1",
+      },
+    },
+      React.createElement("div", {
+        style: { padding: "8px 12px", borderBottom: "1px solid " + C.border,
+                 fontFamily: FONT.chrome, fontSize: 11, letterSpacing: "0.18em",
+                 color: C.textDim },
+      }, "\u258c CRON RIBBON \u00b7 cron.out tail"),
+      React.createElement("pre", {
+        className: "rex-mono",
+        style: { margin: 0, padding: "8px 12px", fontSize: 10,
+                 lineHeight: "1.45", color: C.text, background: C.bg,
+                 maxHeight: 200, overflowY: "auto", whiteSpace: "pre-wrap" },
+      }, (lines || []).slice(-100).join("\n") || "(no cron output)")
+    );
+  }
+
+
   // ============================================================================
   // 8. ROOT
   // ============================================================================
