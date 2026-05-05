@@ -1225,6 +1225,75 @@
     }, body);
   }
 
+  // ---------- KanbanColumn ----------
+  function KanbanColumn(props) {
+    const { id, label, accent, cards, children } = props;
+    return React.createElement("div", {
+      className: "rex-scroll",
+      style: {
+        display: "flex", flexDirection: "column", minWidth: 0,
+        background: C.surfaceLo, border: "1px solid " + C.border, borderTop: "2px solid " + accent,
+        borderRadius: 2, padding: 10, height: "100%", overflowY: "auto",
+      },
+    },
+      React.createElement("div", {
+        className: "rex-chrome",
+        style: {
+          fontSize: 10, color: accent, letterSpacing: "0.24em", fontWeight: 700,
+          paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid " + C.border,
+          display: "flex", justifyContent: "space-between",
+        },
+      },
+        React.createElement("span", null, label),
+        React.createElement("span", { style: { color: C.textDim } }, "(" + cards.length + ")"),
+      ),
+      children,
+      cards.length === 0
+        ? React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim, padding: "8px 4px" } }, "empty")
+        : null,
+    );
+  }
+
+  function NewIdeaInput(props) {
+    const [title, setTitle] = useState("");
+    const [tag, setTag] = useState("");
+    const [busy, setBusy] = useState(false);
+
+    function submit() {
+      const t = title.trim();
+      if (!t || busy) return;
+      setBusy(true);
+      props.onCreate(t, tag.trim() || null)
+        .then(function () { setTitle(""); setTag(""); })
+        .catch(function (err) { console.warn("[rex-loop] create card failed", err); })
+        .finally(function () { setBusy(false); });
+    }
+
+    return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 } },
+      React.createElement("input", {
+        type: "text", value: title, placeholder: "+ new idea",
+        onChange: function (e) { setTitle(e.target.value); },
+        onKeyDown: function (e) { if (e.key === "Enter") submit(); },
+        style: {
+          background: C.bg, color: C.text, border: "1px solid " + C.border, borderRadius: 2,
+          padding: "6px 8px", fontFamily: FONT.mono, fontSize: 11,
+        },
+      }),
+      React.createElement("div", { style: { display: "flex", gap: 6 } },
+        React.createElement("input", {
+          type: "text", value: tag, placeholder: "tag (optional)",
+          onChange: function (e) { setTag(e.target.value); },
+          onKeyDown: function (e) { if (e.key === "Enter") submit(); },
+          style: {
+            flex: 1, background: C.bg, color: C.textDim, border: "1px solid " + C.border, borderRadius: 2,
+            padding: "4px 8px", fontFamily: FONT.mono, fontSize: 10,
+          },
+        }),
+        React.createElement(IconButton, { onClick: submit, disabled: busy || !title.trim() }, busy ? "…" : "ADD"),
+      ),
+    );
+  }
+
   // ============================================================================
   // 7. PAGES
   // ============================================================================
