@@ -2003,9 +2003,17 @@
   // ============================================================================
   // 8. ROOT
   // ============================================================================
+  function AgentsPage() {
+    return React.createElement("div", {
+      style: { padding: 24, color: C.text, fontFamily: FONT.chrome,
+               minHeight: "calc(100vh - 56px)", background: C.bg },
+    }, "AGENTS — coming online");
+  }
+
   const TABS = [
     { id: "overview", label: "OVERVIEW", Page: OverviewPage },
     { id: "kanban",   label: "KANBAN",   Page: KanbanPage },
+    { id: "agents",   label: "AGENTS",   Page: AgentsPage },
     { id: "settings", label: "SETTINGS", Page: SettingsPage },
   ];
 
@@ -2035,6 +2043,17 @@
       }
       window.addEventListener("rex-loop:jump-to-overview", onJump);
       return function () { window.removeEventListener("rex-loop:jump-to-overview", onJump); };
+    }, []);
+
+    useEffect(function () {
+      function onHashChange() {
+        const h = (location.hash || "").replace(/^#/, "");
+        if (h && TABS.some(function (t) { return t.id === h; })) {
+          setTab(h);
+        }
+      }
+      window.addEventListener("hashchange", onHashChange);
+      return function () { window.removeEventListener("hashchange", onHashChange); };
     }, []);
 
     const ActivePage = (TABS.find(function (t) { return t.id === tab; }) || TABS[0]).Page;
