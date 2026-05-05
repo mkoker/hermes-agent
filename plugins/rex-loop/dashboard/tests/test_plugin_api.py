@@ -319,3 +319,34 @@ def test_kanban_delete(app, monkeypatch, tmp_path):
     assert r.status_code == 200
     r = client.get("/kanban/cards")
     assert r.json() == []
+
+
+def test_pm_status_idle(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"; kanban.mkdir()
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+    r = client.get("/pm/status")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["state"] == "idle"
+    assert body["paused"] is False
+    assert "today" in body
+
+
+def test_pm_pause_resume(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"; kanban.mkdir()
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+    r = client.post("/pm/pause"); assert r.status_code == 200
+    assert (kanban / "PM_PAUSE").exists()
+    r = client.get("/pm/status"); assert r.json()["paused"] is True
+    r = client.post("/pm/resume"); assert r.status_code == 200
+    assert not (kanban / "PM_PAUSE").exists()

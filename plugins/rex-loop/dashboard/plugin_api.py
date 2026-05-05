@@ -436,3 +436,50 @@ async def kanban_patch_card(card_id: str, payload: CardPatch):
 async def kanban_delete_card(card_id: str):
     kanban_store.delete_card(kanban_dir=KANBAN_ROOT, card_id=card_id, actor="ui")
     return {"deleted": card_id}
+
+
+# ============================================================================
+# PM endpoints (Subsystem D)
+# ============================================================================
+import pm_status
+
+
+@router.get("/pm/status")
+async def pm_status_endpoint():
+    log = KANBAN_ROOT / "pm.log"
+    pause = KANBAN_ROOT / "PM_PAUSE"
+    auto = KANBAN_ROOT / "AUTO_FLOW"
+    s = pm_status.read_status(log_path=log, pause_flag=pause)
+    s["today"] = pm_status.today_stats(log_path=log)
+    s["auto_flow"] = auto.exists()
+    return s
+
+
+@router.post("/pm/pause")
+async def pm_pause():
+    KANBAN_ROOT.mkdir(parents=True, exist_ok=True)
+    (KANBAN_ROOT / "PM_PAUSE").write_text("via dashboard")
+    return {"paused": True}
+
+
+@router.post("/pm/resume")
+async def pm_resume():
+    p = KANBAN_ROOT / "PM_PAUSE"
+    if p.exists():
+        p.unlink()
+    return {"paused": False}
+
+
+@router.post("/pm/auto-flow")
+async def pm_auto_flow_on():
+    KANBAN_ROOT.mkdir(parents=True, exist_ok=True)
+    (KANBAN_ROOT / "AUTO_FLOW").write_text("on")
+    return {"auto_flow": True}
+
+
+@router.delete("/pm/auto-flow")
+async def pm_auto_flow_off():
+    p = KANBAN_ROOT / "AUTO_FLOW"
+    if p.exists():
+        p.unlink()
+    return {"auto_flow": False}
