@@ -350,3 +350,28 @@ def test_pm_pause_resume(app, monkeypatch, tmp_path):
     r = client.get("/pm/status"); assert r.json()["paused"] is True
     r = client.post("/pm/resume"); assert r.status_code == 200
     assert not (kanban / "PM_PAUSE").exists()
+
+
+def test_kanban_promote_invokes_script(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    kanban = tmp_path / "kanban"
+    monkeypatch.setenv("REX_LOOP_KANBAN_ROOT", str(kanban))
+    # fake promote script that just touches a marker file
+    fake_script = tmp_path / "promote_card.sh"
+    marker = tmp_path / "promoted.marker"
+    fake_script.write_text(f'#!/bin/bash\necho "$1" > {marker}\n')
+    fake_script.chmod(0o755)
+    monkeypatch.setenv("REX_LOOP_PROMOTE_SCRIPT", str(fake_script))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = type(a)(); a2.include_router(plugin_api.router)
+    client = TestClient(a2)
+
+    r = client.post("/kanban/cards", json={"title": "X"})
+    cid = r.json()["id"]
+    client.patch(f"/kanban/cards/{cid}", json={"status": "backlog"})
+
+    r = client.post(f"/kanban/cards/{cid}/promote")
+    assert r.status_code == 200
+    assert marker.exists()
+    assert marker.read_text().strip() == cid

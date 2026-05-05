@@ -483,3 +483,27 @@ async def pm_auto_flow_off():
     if p.exists():
         p.unlink()
     return {"auto_flow": False}
+
+
+# ============================================================================
+# Kanban promote endpoint (Subsystem D-Integration placeholder)
+# ============================================================================
+PROMOTE_SCRIPT = Path(_os.environ.get(
+    "REX_LOOP_PROMOTE_SCRIPT", "/home/ubuntu/.hermes/loop/promote_card.sh"
+))
+
+
+@router.post("/kanban/cards/{card_id}/promote")
+async def kanban_promote(card_id: str):
+    try:
+        card = kanban_store.get_card(kanban_dir=KANBAN_ROOT, card_id=card_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "card not found")
+    if card["status"] != "backlog":
+        raise HTTPException(400, f"card status is {card['status']}, must be 'backlog'")
+    if not PROMOTE_SCRIPT.exists():
+        raise HTTPException(503, "promote script not installed")
+    rc = subprocess.run([str(PROMOTE_SCRIPT), card_id], capture_output=True, text=True, timeout=30)
+    if rc.returncode != 0:
+        raise HTTPException(500, f"promote failed: {rc.stderr.strip()[:200]}")
+    return {"promoted": card_id, "stdout": rc.stdout.strip()}
