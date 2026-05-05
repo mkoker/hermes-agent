@@ -2056,6 +2056,97 @@
   }
 
   // ============================================================================
+  // 7.X STREAM TILE
+  // ============================================================================
+  const KIND_COLOR = {
+    "mission":   C.accent,        // yellow
+    "synth":     "#79c2ff",       // blue
+    "pm":        "#b76dff",       // purple
+    "ai-brief":  "#06d6a0",       // green
+    "telegram":  C.text,          // cool light
+  };
+  const KIND_ICON = {
+    "mission":   "⚙",
+    "synth":     "Σ",
+    "pm":        "▤",
+    "ai-brief":  "✎",
+    "telegram":  "✉",
+  };
+
+  function fmtElapsed(startedAt) {
+    if (!startedAt) return "";
+    const sec = Math.max(0, Math.floor((Date.now() - new Date(startedAt).getTime())/1000));
+    const m = Math.floor(sec/60), s = sec%60;
+    return (m < 10 ? "0"+m : m) + ":" + (s < 10 ? "0"+s : s);
+  }
+
+  function StreamTile(props) {
+    const stream = props.stream;
+    const sse = useStreamSSE(stream.status === "running" ? stream.id : null);
+    const [now, setNow] = useState(Date.now());
+    useEffect(function () {
+      const id = setInterval(function () { setNow(Date.now()); }, 1000);
+      return function () { clearInterval(id); };
+    }, []);
+    // For ended streams: do a one-shot fetch of the snapshot via SSE-with-follow=false
+    const [snapshot, setSnapshot] = useState(null);
+    useEffect(function () {
+      if (stream.status === "running") return;
+      fetch("/api/plugins/rex-loop/streams/" + encodeURIComponent(stream.id) +
+            "/events?follow=false&snapshot=200")
+        .then(function (r) { return r.text(); })
+        .then(function (txt) {
+          // Parse SSE stream: lines starting with "data: " in snapshot event
+          const m = txt.match(/event: snapshot\nid: \d+\ndata: (.+)\n\n/);
+          if (m) {
+            try { setSnapshot(JSON.parse(m[1]).lines || []); }
+            catch (_e) {}
+          }
+        }).catch(function () {});
+    }, [stream.id, stream.status]);
+
+    const lines = stream.status === "running" ? sse.lines : (snapshot || []);
+    const color = KIND_COLOR[stream.kind] || C.text;
+    const icon = KIND_ICON[stream.kind] || "▶";
+    const statusPill = stream.status === "running" ? "● LIVE"
+                     : stream.status === "done" ? "✓ DONE"
+                     : stream.status === "error" ? "✕ ERROR"
+                     : "□ KILLED";
+
+    return React.createElement("div", {
+      style: {
+        display: "flex", flexDirection: "column",
+        background: C.surface, border: "1px solid " + C.border,
+        borderTop: "2px solid " + color,
+        borderRadius: 4, minHeight: 240,
+      },
+    },
+      React.createElement("div", {
+        style: { padding: "8px 12px", borderBottom: "1px solid " + C.border,
+                 display: "flex", alignItems: "baseline", gap: 10,
+                 fontFamily: FONT.chrome, fontSize: 11, letterSpacing: "0.18em" },
+      },
+        React.createElement("span", { style: { color, fontSize: 13 } }, icon),
+        React.createElement("span", { style: { color, fontWeight: 600 } },
+          stream.kind.toUpperCase()),
+        React.createElement("span", { style: { color: C.text, opacity: 0.8 } },
+          stream.instance),
+        React.createElement("span", { style: { marginLeft: "auto", color: C.textDim } },
+          (stream.model_hint || "?") + " · " + fmtElapsed(stream.started_at)),
+        React.createElement("span", { style: { color, fontSize: 10 } }, statusPill),
+      ),
+      React.createElement("pre", {
+        className: "rex-mono",
+        style: { flex: 1, margin: 0, padding: "8px 12px", fontSize: 11,
+                 lineHeight: "1.4", color: C.text, background: C.bg,
+                 overflowY: "auto", maxHeight: 360, whiteSpace: "pre-wrap" },
+      },
+        lines.map(function (l) { return l.text; }).join("\n") || "(no output yet)",
+      ),
+    );
+  }
+
+  // ============================================================================
   // 8. ROOT
   // ============================================================================
   function AgentsPage() {
