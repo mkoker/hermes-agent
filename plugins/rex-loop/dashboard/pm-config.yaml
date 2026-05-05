@@ -1,5 +1,11 @@
 # PM Hermes profile — scopes Inbox cards into mission specs.
 # Points at llama-proxy on VM 100 :8081 so it follows whichever model is loaded.
+#
+# IMPORTANT: toolsets is empty so PM cannot call bash/read/web/etc. PM is a
+# pure text-emitter — input is a prompt (idea + active mission list), output
+# is a markdown spec on stdout. Combined with the runner's --yolo flag, this
+# is the only thing keeping the agent from running arbitrary commands. Do
+# not add toolsets here without auditing what tools they expose.
 
 model:
   default: Qwen3.6-35B-A3B-UD-Q4_K_M.gguf
@@ -10,8 +16,8 @@ model:
   max_tokens: 16384
 providers: {}
 fallback_providers: []
-toolsets:
-  - hermes-cli
+toolsets: []
 agent:
   max_turns: 30
   gateway_timeout: 600
+  tool_use_enforcement: never
