@@ -61,6 +61,7 @@
     cronStream:     3000,  // 3s incremental tail
     tickfile:       3000,  // 3s when a tick is live
     pmStatus:       3000,  // 3s during scoping
+    streams:       4000,   // 4s agent stream list
   };
 
   const TZ = (function () {
@@ -424,6 +425,13 @@
     }, [refresh]);
 
     return { data: state.data, loading: state.loading, setPaused: setPaused, setAutoFlow: setAutoFlow, refresh: refresh };
+  }
+
+  function useStreams(filter) {
+    const filterStr = (filter && filter.kind) ? "?kind=" + encodeURIComponent(filter.kind)
+                  : (filter && filter.status) ? "?status=" + encodeURIComponent(filter.status)
+                  : "";
+    return useApi("/streams" + filterStr, POLL.streams || 4000, [filterStr]);
   }
 
   // ============================================================================
