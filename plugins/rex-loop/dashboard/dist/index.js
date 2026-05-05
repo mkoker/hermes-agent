@@ -89,6 +89,71 @@
     document.head.appendChild(s);
   }
 
+  // Mission Control theme override — applies to the whole Hermes dashboard.
+  // Hermes sets theme tokens via inline style="" on <html> at boot, so we must
+  // (a) use !important in CSS to beat inline styles, and (b) re-apply via a
+  // MutationObserver if Hermes ever re-writes the inline style. The three
+  // base tokens (--background-base / --foreground-base / --midground-base)
+  // cascade through every Hermes color via color-mix().
+  if (typeof document !== "undefined" && !document.getElementById("rex-mission-control-theme")) {
+    const t = document.createElement("style");
+    t.id = "rex-mission-control-theme";
+    // Mission Control = deep navy bg + cool-light text + reserved yellow.
+    // Keeping midground close to foreground means body text stays readable;
+    // our plugin uses C.accent (#ffd60a) directly for highlights instead of
+    // routing yellow through Hermes' midground token (which would make
+    // ALL body text yellow — too saturated for reading).
+    const MC_TEXT = C.text;          // #e6f0ff — cool light, primary text
+    const MC_ACCENT_SOFT = "#ffe66a"; // softer yellow tint for Hermes highlights
+    t.textContent = `
+      :root, html {
+        --background:        ${C.bg}         !important;
+        --background-base:   ${C.bg}         !important;
+        --background-alpha:  1               !important;
+        --foreground:        ${MC_TEXT}      !important;
+        --foreground-base:   ${MC_TEXT}      !important;
+        --foreground-alpha:  1               !important;
+        --midground:         ${MC_TEXT}      !important;
+        --midground-base:    ${MC_TEXT}      !important;
+        --midground-alpha:   1               !important;
+        --color-success:     ${C.success}    !important;
+        --color-warning:     ${MC_ACCENT_SOFT} !important;
+        --color-destructive: ${C.error}      !important;
+        --warm-glow:         rgba(255, 214, 10, 0.20) !important;
+      }
+    `;
+    document.head.appendChild(t);
+
+    // Also set inline on documentElement (with !important) so values win even
+    // if Hermes runtime-rewrites the inline style attr at boot.
+    function applyMissionTheme() {
+      const root = document.documentElement;
+      root.style.setProperty("--background",      C.bg,    "important");
+      root.style.setProperty("--background-base", C.bg,    "important");
+      root.style.setProperty("--foreground",      MC_TEXT, "important");
+      root.style.setProperty("--foreground-base", MC_TEXT, "important");
+      root.style.setProperty("--foreground-alpha", "1",    "important");
+      root.style.setProperty("--midground",       MC_TEXT, "important");
+      root.style.setProperty("--midground-base",  MC_TEXT, "important");
+      root.style.setProperty("--midground-alpha", "1",     "important");
+    }
+    applyMissionTheme();
+
+    // Re-apply on any html-style mutation in case Hermes resets the theme.
+    if (typeof MutationObserver !== "undefined") {
+      const mo = new MutationObserver(function (muts) {
+        for (const m of muts) {
+          if (m.attributeName === "style") {
+            // Schedule micro-task so our re-apply runs after Hermes' write.
+            Promise.resolve().then(applyMissionTheme);
+            break;
+          }
+        }
+      });
+      mo.observe(document.documentElement, { attributes: true, attributeFilter: ["style"] });
+    }
+  }
+
   // ============================================================================
   // 2. UTILITIES
   // ============================================================================
@@ -333,6 +398,11 @@
 
   function usePmStatus() {
     const [state, setState] = useState({ data: null, loading: true });
+    const refresh = useCallback(function () {
+      api("/pm/status").then(function (data) {
+        setState({ data: data, loading: false });
+      }).catch(function () {});
+    }, []);
     useEffect(function () {
       let cancelled = false;
       function tick() {
@@ -346,10 +416,14 @@
     }, []);
 
     const setPaused = useCallback(function (paused) {
-      return api(paused ? "/pm/pause" : "/pm/resume", { method: "POST" });
-    }, []);
+      return api(paused ? "/pm/pause" : "/pm/resume", { method: "POST" }).then(function (r) { refresh(); return r; });
+    }, [refresh]);
 
-    return { data: state.data, loading: state.loading, setPaused: setPaused };
+    const setAutoFlow = useCallback(function (on) {
+      return api("/pm/auto-flow", { method: on ? "POST" : "DELETE" }).then(function (r) { refresh(); return r; });
+    }, [refresh]);
+
+    return { data: state.data, loading: state.loading, setPaused: setPaused, setAutoFlow: setAutoFlow, refresh: refresh };
   }
 
   // ============================================================================
@@ -1697,8 +1771,233 @@
       ),
     );
   }
+  // ---------- Settings page ----------
+  function ToggleRow(props) {
+    const { label, description, on, onToggle, onColor, onLabel, offLabel, busy } = props;
+    const accent = onColor || C.success;
+    return React.createElement("div", {
+      style: {
+        display: "grid", gridTemplateColumns: "1fr auto", gap: 16, alignItems: "center",
+        padding: "14px 16px",
+        borderTop: "1px solid " + C.border,
+      },
+    },
+      React.createElement("div", { style: { minWidth: 0 } },
+        React.createElement("div", {
+          style: { display: "flex", alignItems: "center", gap: 10 },
+        },
+          React.createElement("span", {
+            className: "rex-mono",
+            style: { fontSize: 13, color: C.text, fontWeight: 700 },
+          }, label),
+          React.createElement("span", {
+            className: "rex-chrome",
+            style: {
+              fontSize: 9, padding: "2px 8px", borderRadius: 2, letterSpacing: "0.2em", fontWeight: 700,
+              background: (on ? accent : C.muted) + "22",
+              color: on ? accent : C.muted,
+              border: "1px solid " + (on ? accent : C.muted) + "55",
+            },
+          }, on ? (onLabel || "ON") : (offLabel || "OFF")),
+        ),
+        description ? React.createElement("p", {
+          className: "rex-mono",
+          style: { fontSize: 11, color: C.textDim, margin: "4px 0 0", lineHeight: 1.5 },
+        }, description) : null,
+      ),
+      React.createElement(IconButton, {
+        onClick: function () { onToggle(!on); },
+        disabled: busy,
+        style: {
+          minWidth: 100, justifyContent: "center", textAlign: "center",
+          borderColor: on ? accent : C.border,
+          color: on ? accent : C.textDim,
+        },
+      }, busy ? "…" : (on ? "DISABLE" : "ENABLE")),
+    );
+  }
+
+  function SettingsCard(props) {
+    return React.createElement("div", {
+      style: {
+        background: C.surface, border: "1px solid " + C.border, borderRadius: 4,
+        marginBottom: 14, overflow: "hidden",
+      },
+    },
+      React.createElement("div", {
+        style: {
+          padding: "10px 16px",
+          borderBottom: "1px solid " + C.border,
+          background: "rgba(0,8,20,0.55)",
+        },
+      },
+        React.createElement("span", {
+          className: "rex-chrome",
+          style: { fontSize: 10, color: props.accent || C.accent, letterSpacing: "0.24em", fontWeight: 700 },
+        }, props.title),
+        props.subtitle ? React.createElement("span", {
+          className: "rex-mono",
+          style: { fontSize: 10, color: C.textDim, marginLeft: 12 },
+        }, props.subtitle) : null,
+      ),
+      props.children,
+    );
+  }
+
+  function DiagnosticsRow(props) {
+    return React.createElement("div", {
+      style: {
+        display: "grid", gridTemplateColumns: "200px 1fr",
+        padding: "10px 16px", borderTop: "1px solid " + C.border, gap: 12, alignItems: "baseline",
+      },
+    },
+      React.createElement("span", {
+        className: "rex-chrome",
+        style: { fontSize: 10, color: C.textDim, letterSpacing: "0.18em" },
+      }, props.label),
+      React.createElement("span", {
+        className: "rex-mono",
+        style: { fontSize: 11, color: props.color || C.text, fontVariantNumeric: "tabular-nums", wordBreak: "break-all" },
+      }, props.value),
+    );
+  }
+
   function SettingsPage() {
-    return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Settings tab — placeholder");
+    const pm = usePmStatus();
+    const pause = useGlobalPause();
+    const tokensTotal = useTokensTotal();
+    const missionsState = useMissions();
+    const [busy, setBusy] = useState({});
+
+    function withBusy(key, fn) {
+      setBusy(function (b) { return Object.assign({}, b, { [key]: true }); });
+      Promise.resolve(fn()).finally(function () {
+        setBusy(function (b) { const n = Object.assign({}, b); delete n[key]; return n; });
+      });
+    }
+
+    const pmData    = pm.data || {};
+    const autoFlow  = !!pmData.auto_flow;
+    const pmPaused  = !!pmData.paused;
+    const totalIn   = safeNum(tokensTotal.data && tokensTotal.data["in"]);
+    const totalOut  = safeNum(tokensTotal.data && tokensTotal.data.out);
+    const daysRun   = safeNum(tokensTotal.data && tokensTotal.data.days_running);
+    const missions  = missionsState.data || [];
+
+    return React.createElement("div", {
+      style: {
+        padding: "16px 20px",
+        background: C.bg, color: C.text,
+        height: "100%", overflowY: "auto",
+        maxWidth: 880, margin: "0 auto",
+      },
+      className: "rex-scroll",
+    },
+      // Heading
+      React.createElement("div", { style: { marginBottom: 18 } },
+        React.createElement("h1", {
+          className: "rex-chrome",
+          style: { fontSize: 16, color: C.text, letterSpacing: "0.24em", fontWeight: 700, margin: 0 },
+        }, "REX LOOP // SETTINGS"),
+        React.createElement("p", {
+          className: "rex-mono",
+          style: { fontSize: 11, color: C.textDim, margin: "6px 0 0", lineHeight: 1.5 },
+        }, "Toggles + diagnostics for the war-room. Changes apply immediately — no save button."),
+      ),
+
+      // Card 1: Loop control
+      React.createElement(SettingsCard, { title: "LOOP CONTROL" },
+        React.createElement(ToggleRow, {
+          label: "Global Pause",
+          description: "Halts ALL loops — Rex multi-profile ticks AND PM scoping. Sentinel file: ~/.hermes/loop/PAUSE",
+          on: pause.paused,
+          onColor: C.error,
+          onLabel: "PAUSED",
+          offLabel: "RUNNING",
+          busy: busy.pause,
+          onToggle: function () { withBusy("pause", function () { return pause.toggle(); }); },
+        }),
+      ),
+
+      // Card 2: PM Agent
+      React.createElement(SettingsCard, { title: "PM AGENT", accent: C.pmAccent },
+        React.createElement(ToggleRow, {
+          label: "Auto-Flow",
+          description: "When ON, PM-scoped specs auto-promote from Backlog → Active. When OFF, you must click START on each Backlog card. Sentinel file: ~/.hermes/kanban/AUTO_FLOW",
+          on: autoFlow,
+          busy: busy.autoFlow,
+          onToggle: function (next) { withBusy("autoFlow", function () { return pm.setAutoFlow(next); }); },
+        }),
+        React.createElement(ToggleRow, {
+          label: "PM Pause",
+          description: "Stops the PM scoping cron without affecting other loops. Sentinel file: ~/.hermes/kanban/PM_PAUSE",
+          on: pmPaused,
+          onColor: C.error,
+          onLabel: "PAUSED",
+          offLabel: "RUNNING",
+          busy: busy.pmPause,
+          onToggle: function (next) { withBusy("pmPause", function () { return pm.setPaused(next); }); },
+        }),
+      ),
+
+      // Card 3: Diagnostics
+      React.createElement(SettingsCard, {
+        title: "DIAGNOSTICS",
+        subtitle: "live state of the rex-loop plugin",
+      },
+        React.createElement(DiagnosticsRow, {
+          label: "Plugin",
+          value: "rex-loop / war-room v4 (manifest v2.0.0)",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Plugin dir",
+          value: "~/.hermes/hermes-agent/plugins/rex-loop/dashboard/",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Missions",
+          value: missions.length + " total · " +
+            missions.filter(function (m) { return m.status === "active"; }).length + " active · " +
+            missions.filter(function (m) { return m.status === "done"; }).length + " done",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Tokens (lifetime)",
+          color: (totalIn + totalOut) > 0 ? C.text : C.error,
+          value: (totalIn + totalOut) > 0
+            ? (fmtTokens(totalIn) + " in · " + fmtTokens(totalOut) + " out · " + daysRun + " days")
+            : "no data — Hermes session JSON does not preserve usage; scraper finds 0",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Local LLM",
+          value: "llama-proxy: http://192.168.1.169:8081/v1 (PM profile target)",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Cron",
+          value: "*/5 pm_runner.sh · */15 refresh-tokens.sh",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Sentinel files",
+          value: "PAUSE=" + (pause.paused ? "yes" : "no") +
+                 " · PM_PAUSE=" + (pmPaused ? "yes" : "no") +
+                 " · AUTO_FLOW=" + (autoFlow ? "yes" : "no"),
+        }),
+      ),
+
+      // Card 4: References
+      React.createElement(SettingsCard, { title: "REFERENCES" },
+        React.createElement(DiagnosticsRow, {
+          label: "Spec",
+          value: "docs/superpowers/specs/2026-05-05-rex-loop-warroom-and-pm-agent-design.md",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Plan",
+          value: "docs/superpowers/plans/2026-05-05-rex-loop-warroom-and-pm-agent.md",
+        }),
+        React.createElement(DiagnosticsRow, {
+          label: "Tag",
+          value: "rex-loop-warroom-v2.0.1 (post-review fixes)",
+        }),
+      ),
+    );
   }
 
   // ============================================================================
@@ -1712,10 +2011,21 @@
 
   function RexLoopPage() {
     const [tab, setTab] = useState(function () {
-      try { return localStorage.getItem("rex-loop:active-tab") || "overview"; } catch (_e) { return "overview"; }
+      try {
+        // URL hash override: /rex-loop#kanban → kanban tab on first mount.
+        // Lets you deep-link or share a tab-specific URL.
+        const h = (typeof location !== "undefined" && location.hash) ? location.hash.replace(/^#/, "") : "";
+        if (h && TABS.some(function (t) { return t.id === h; })) return h;
+        return localStorage.getItem("rex-loop:active-tab") || "overview";
+      } catch (_e) { return "overview"; }
     });
     useEffect(function () {
       try { localStorage.setItem("rex-loop:active-tab", tab); } catch (_e) {}
+      try {
+        if (typeof history !== "undefined" && history.replaceState) {
+          history.replaceState(null, "", "#" + tab);
+        }
+      } catch (_e) {}
     }, [tab]);
 
     useEffect(function () {
