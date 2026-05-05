@@ -1046,6 +1046,73 @@
     );
   }
 
+  // ---------- PmStrip (purple, top of Kanban view) ----------
+  function PmStrip(props) {
+    const { pm } = props;
+    const data = (pm && pm.data) || { state: "idle", queue: [], today: { scoped: 0, avg_seconds: 0, fails: 0 }, current: null, trace: [] };
+    const isWorking = data.state === "working";
+    const isPaused = data.state === "paused";
+    const purple = C.pmAccent;
+
+    const stateLabel = (function () {
+      if (isPaused) return "PM PAUSED";
+      if (isWorking) {
+        const elapsed = data.current && data.current.started_at
+          ? Math.floor((Date.now() - new Date(data.current.started_at).getTime()) / 1000)
+          : null;
+        return "scoping '" + (data.current && data.current.title || "?") + "'" +
+          (elapsed != null ? " · " + fmtDuration(elapsed) + " in" : "");
+      }
+      return "idle, queue " + ((data.queue && data.queue.length) || 0);
+    })();
+
+    return React.createElement(Panel, {
+      accent: purple,
+      style: {
+        marginBottom: 12,
+        background: purple + "0c",
+        borderColor: purple + "55",
+        boxShadow: isWorking ? "0 0 0 1px " + purple + "33" : "none",
+      },
+      className: isWorking ? "rex-pulse-yellow" : null,
+    },
+      React.createElement("div", { style: { display: "flex", gap: 18, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" } },
+        React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center", minWidth: 0 } },
+          React.createElement("span", {
+            className: "rex-chrome",
+            style: { fontSize: 10, color: purple, letterSpacing: "0.24em", fontWeight: 700 },
+          }, "PM AGENT"),
+          React.createElement("span", {
+            className: "rex-mono",
+            style: { fontSize: 12, color: isPaused ? C.error : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+          }, stateLabel),
+        ),
+        React.createElement("div", { style: { display: "flex", gap: 24, alignItems: "center" } },
+          React.createElement(Stat, { label: "scoped today",  value: data.today && data.today.scoped, color: purple }),
+          React.createElement(Stat, { label: "avg scope time", value: fmtDuration(data.today && data.today.avg_seconds) }),
+          React.createElement(Stat, { label: "fails",          value: data.today && data.today.fails, color: (data.today && data.today.fails > 0) ? C.error : C.success }),
+          React.createElement(IconButton, {
+            onClick: function () { pm.setPaused(!isPaused); },
+            danger: !isPaused,
+            style: { borderColor: purple, color: isPaused ? C.success : purple },
+          }, isPaused ? "RESUME PM" : "PAUSE PM"),
+        ),
+      ),
+      // Live PM trace (only while scoping)
+      isWorking && data.trace && data.trace.length > 0
+        ? React.createElement("pre", {
+            className: "rex-mono rex-scroll",
+            style: {
+              marginTop: 8, padding: "8px 10px",
+              background: C.surfaceLo, border: "1px dashed " + purple + "55", borderRadius: 2,
+              fontSize: 10, lineHeight: 1.4, color: C.textDim,
+              maxHeight: 120, overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
+            },
+          }, data.trace.join("\n"))
+        : null,
+    );
+  }
+
   // ============================================================================
   // 7. PAGES
   // ============================================================================
