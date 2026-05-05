@@ -344,3 +344,31 @@ async def tokens_by_role():
 @router.get("/tokens/by-hour")
 async def tokens_by_hour(window: int = 24):
     return token_scraper.by_hour(sessions_dir=SESSIONS_DIR, window_hours=max(1, min(168, window)))
+
+
+_SECT_RE = re.compile(r"^## (\w[\w \(\)]*)$", re.MULTILINE)
+
+
+@router.get("/missions/{name}/tickfile/{tick_id}")
+async def tickfile(name: str, tick_id: str):
+    p = MISSIONS_ROOT / name / "ticks" / f"{tick_id}.md"
+    if not p.exists():
+        raise HTTPException(404, "tick file not found")
+    text = p.read_text()
+    sections = []
+    matches = list(_SECT_RE.finditer(text))
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        sections.append({
+            "role": m.group(1),
+            "body": text[start:end].strip(),
+            "started_at": None,
+            "ended_at": None,
+        })
+    return {
+        "path": str(p),
+        "mtime": p.stat().st_mtime,
+        "size": p.stat().st_size,
+        "sections": sections,
+    }

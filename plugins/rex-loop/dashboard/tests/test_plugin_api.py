@@ -235,3 +235,34 @@ def test_tokens_total_endpoint(app, monkeypatch, tmp_path):
     body = r.json()
     assert body["in"] == 500
     assert body["out"] == 200
+
+
+def test_tickfile_endpoint_parses_sections(app):
+    a, missions, _ = app
+    md = missions / "demo"
+    md.mkdir()
+    (md / "ticks").mkdir()
+    (md / "ticks" / "1.md").write_text(
+        "# Tick 1 · mission: demo · task: T01\nstarted: 2026-05-04T20:11:54Z\n\n"
+        "## Researcher\nresearcher body content here\n\n"
+        "## Planner\nplanner body content\n\n"
+        "## Coder\ncoder body in progress"
+    )
+    a2 = type(a)(); a2.include_router(__import__("plugin_api").router)
+    client = TestClient(a2)
+    r = client.get("/missions/demo/tickfile/1")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["path"].endswith("/1.md")
+    assert len(body["sections"]) == 3
+    roles = [s["role"] for s in body["sections"]]
+    assert roles == ["Researcher", "Planner", "Coder"]
+    assert "researcher body content" in body["sections"][0]["body"]
+
+
+def test_tickfile_endpoint_404_when_missing(app):
+    a, _, _ = app
+    a2 = type(a)(); a2.include_router(__import__("plugin_api").router)
+    client = TestClient(a2)
+    r = client.get("/missions/nope/tickfile/99")
+    assert r.status_code == 404
