@@ -581,3 +581,60 @@ def test_pm_fire_idempotent_when_already_running(app, monkeypatch, tmp_path):
         # Cleanup: kill the lingering sleep process
         import os, signal
         os.kill(r1.json()["pid"], signal.SIGTERM)
+
+
+def test_telegram_recent_lists_session_files(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    f1 = sessions / "20260505_100000_abc.jsonl"
+    f1.write_text(json.dumps({"role": "user", "content": "hi"}) + "\n")
+    f2 = sessions / "20260505_120000_def.jsonl"
+    f2.write_text(json.dumps({"role": "user", "content": "yo"}) + "\n")
+    monkeypatch.setenv("REX_SESSIONS_ROOT", str(sessions))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r = c.get("/telegram/recent?limit=2")
+        assert r.status_code == 200
+        ids = [s["id"] for s in r.json()]
+        assert ids[0] == "20260505_120000_def"  # newest first
+        assert ids[1] == "20260505_100000_abc"
+
+
+def test_telegram_turns_returns_user_assistant_lines(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    sessions = tmp_path / "sessions"
+    sessions.mkdir()
+    f = sessions / "20260505_100000_abc.jsonl"
+    f.write_text(
+        json.dumps({"role": "session_meta", "tools": []}) + "\n" +
+        json.dumps({"role": "user", "content": "hi", "timestamp": "2026-05-05T10:00:01"}) + "\n" +
+        json.dumps({"role": "assistant", "content": "hello", "timestamp": "2026-05-05T10:00:02"}) + "\n")
+    monkeypatch.setenv("REX_SESSIONS_ROOT", str(sessions))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = FastAPI()
+    a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        r = c.get("/telegram/20260505_100000_abc/turns")
+        assert r.status_code == 200
+        turns = r.json()
+        # session_meta filtered out
+        assert [t["role"] for t in turns] == ["user", "assistant"]
+        assert turns[0]["content"] == "hi"
+
+
+def test_telegram_turns_rejects_path_traversal(app, monkeypatch, tmp_path):
+    a, missions, loop_root = app
+    sessions = tmp_path / "sessions"; sessions.mkdir()
+    monkeypatch.setenv("REX_SESSIONS_ROOT", str(sessions))
+    import importlib, plugin_api
+    importlib.reload(plugin_api)
+    a2 = FastAPI(); a2.include_router(plugin_api.router)
+    with TestClient(a2) as c:
+        # FastAPI rejects "../" in path params, but encoded ones can leak through
+        r = c.get("/telegram/..%2F..%2Fetc%2Fpasswd/turns")
+        assert r.status_code in (400, 404)  # 400 from our guard, or 404 if path doesn't pass URL parser

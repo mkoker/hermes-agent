@@ -678,3 +678,53 @@ async def ai_brief_fire():
         kind="ai-brief", runner_path=AI_BRIEF_RUNNER,
         log_dir=AI_BRIEF_RUNNER.parent / "streams",
         model_hint="mixed")
+
+
+# ============================================================================
+# Telegram session endpoints (§5.5)
+# ============================================================================
+SESSIONS_ROOT = Path(_os.environ.get("REX_SESSIONS_ROOT",
+                                     "/home/ubuntu/.hermes/sessions"))
+
+
+@router.get("/telegram/recent")
+async def telegram_recent(limit: int = Query(20, ge=1, le=200)):
+    if not SESSIONS_ROOT.exists():
+        return []
+    files = sorted(SESSIONS_ROOT.glob("*.jsonl"),
+                   key=lambda p: p.stat().st_mtime, reverse=True)[:limit]
+    out = []
+    for f in files:
+        out.append({
+            "id": f.stem,
+            "path": str(f),
+            "size": f.stat().st_size,
+            "modified_at": datetime.fromtimestamp(
+                f.stat().st_mtime, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        })
+    return out
+
+
+@router.get("/telegram/{session_id}/turns")
+async def telegram_turns(session_id: str,
+                         since: str | None = Query(None)):
+    f = SESSIONS_ROOT / f"{session_id}.jsonl"
+    # Reject path-traversal attempts — must resolve inside SESSIONS_ROOT.
+    if not f.resolve().is_relative_to(SESSIONS_ROOT.resolve()):
+        raise HTTPException(400, "invalid session id")
+    if not f.exists():
+        raise HTTPException(404, "session not found")
+    out = []
+    for line in f.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            o = _json_mod.loads(line)
+        except _json_mod.JSONDecodeError:
+            continue
+        if o.get("role") in ("session_meta",):
+            continue
+        if since and o.get("timestamp", "") <= since:
+            continue
+        out.append(o)
+    return out
