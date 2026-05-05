@@ -1319,7 +1319,13 @@
   function OverviewPage(props) {
     const missionsState = useMissions();
     const missions = missionsState.data || [];
-    const [selectedName, setSelectedName] = useState(null);
+    const [selectedName, setSelectedName] = useState(function () {
+      try {
+        const j = localStorage.getItem("rex-loop:jump-mission");
+        if (j) { localStorage.removeItem("rex-loop:jump-mission"); return j; }
+      } catch (_e) {}
+      return null;
+    });
     const active = useActiveMission(missions);
     const selected = useMemo(function () {
       if (selectedName) return missions.find(function (m) { return m.name === selectedName; }) || null;
@@ -1391,7 +1397,147 @@
   }
 
   function KanbanPage() {
-    return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Kanban tab — coming in Phase C");
+    const kanban = useKanban();
+    const pm = usePmStatus();
+    const missionsState = useMissions();
+    const missions = missionsState.data || [];
+    const [editingCard, setEditingCard] = useState(null);
+
+    function missionByName(n) {
+      if (!n) return null;
+      return missions.find(function (m) { return m.name === n; }) || null;
+    }
+
+    // Group cards by status
+    const byStatus = useMemo(function () {
+      const out = { inbox: [], scoping: [], backlog: [], active: [], done: [] };
+      (kanban.cards || []).forEach(function (c) {
+        if (c.status && out[c.status]) out[c.status].push(c);
+      });
+      // Newest-first within each column (created_at desc)
+      Object.keys(out).forEach(function (k) {
+        out[k].sort(function (a, b) { return (b.created_at || "").localeCompare(a.created_at || ""); });
+      });
+      return out;
+    }, [kanban.cards]);
+
+    // Determine PM queue position: scoping cards in queue order (oldest first === position 1)
+    const scopingByQueue = useMemo(function () {
+      const arr = (byStatus.scoping || []).slice().sort(function (a, b) { return (a.updated_at || "").localeCompare(b.updated_at || ""); });
+      const activeId = pm.data && pm.data.current && pm.data.current.card_id;
+      return arr.map(function (c, i) {
+        return { card: c, queuePos: c.id === activeId ? null : (i + 1) };
+      });
+    }, [byStatus.scoping, pm.data]);
+
+    function handleStart(id)   { kanban.promote(id).catch(function (e) { alert("promote failed: " + (e.message || e)); }); }
+    function handleDiscard(id) { if (confirm("Discard this card?")) kanban.discard(id); }
+    function handleEdit(c)     { setEditingCard(c); }
+    function handleJump(missionName) {
+      try {
+        localStorage.setItem("rex-loop:active-tab", "overview");
+        if (missionName) localStorage.setItem("rex-loop:jump-mission", missionName);
+      } catch (_e) {}
+      window.dispatchEvent(new CustomEvent("rex-loop:jump-to-overview", { detail: { mission: missionName } }));
+    }
+
+    function ColumnCards(props) {
+      return props.cards.map(function (c) {
+        return React.createElement(KanbanCard, {
+          key: c.id, card: c,
+          mission: c.mission_name ? missionByName(c.mission_name) : null,
+          onStart: handleStart, onEdit: handleEdit, onDiscard: handleDiscard, onJump: handleJump,
+        });
+      });
+    }
+
+    return React.createElement("div", {
+      style: { padding: "12px 16px", background: C.bg, color: C.text, height: "100%", display: "flex", flexDirection: "column" },
+    },
+      React.createElement(PmStrip, { pm: pm }),
+      kanban.error
+        ? React.createElement(Panel, { accent: C.error, style: { marginBottom: 12 } },
+            React.createElement("span", { className: "rex-mono", style: { color: C.error, fontSize: 11 } },
+              "kanban error: " + (kanban.error.message || String(kanban.error))))
+        : null,
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 12, flex: 1, minHeight: 0 },
+      },
+        // Inbox — has new-idea input
+        React.createElement(KanbanColumn, { id: "inbox", label: "INBOX", accent: C.muted, cards: byStatus.inbox },
+          React.createElement(NewIdeaInput, { onCreate: kanban.create }),
+          ColumnCards({ cards: byStatus.inbox }),
+        ),
+        // Scoping — uses queue position
+        React.createElement(KanbanColumn, { id: "scoping", label: "SCOPING", accent: C.pmAccent, cards: byStatus.scoping },
+          scopingByQueue.map(function (entry) {
+            return React.createElement(KanbanCard, {
+              key: entry.card.id, card: entry.card, queuePos: entry.queuePos,
+              onStart: handleStart, onEdit: handleEdit, onDiscard: handleDiscard,
+            });
+          }),
+        ),
+        // Backlog
+        React.createElement(KanbanColumn, { id: "backlog", label: "BACKLOG", accent: C.info, cards: byStatus.backlog },
+          ColumnCards({ cards: byStatus.backlog }),
+        ),
+        // Active
+        React.createElement(KanbanColumn, { id: "active", label: "ACTIVE", accent: C.accent, cards: byStatus.active },
+          ColumnCards({ cards: byStatus.active }),
+        ),
+        // Done
+        React.createElement(KanbanColumn, { id: "done", label: "DONE", accent: C.success, cards: byStatus.done },
+          ColumnCards({ cards: byStatus.done }),
+        ),
+      ),
+      // Edit modal
+      editingCard
+        ? React.createElement(EditCardModal, {
+            card: editingCard,
+            onClose: function () { setEditingCard(null); },
+            onSave: function (patch) {
+              kanban.update(editingCard.id, patch).then(function () { setEditingCard(null); });
+            },
+          })
+        : null,
+    );
+  }
+
+  function EditCardModal(props) {
+    const [title, setTitle] = useState(props.card.title || "");
+    const [tag, setTag] = useState(props.card.tag || "");
+    return React.createElement("div", {
+      onClick: props.onClose,
+      style: {
+        position: "fixed", inset: 0, background: "rgba(0,8,20,0.78)",
+        display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50,
+      },
+    },
+      React.createElement("div", {
+        onClick: function (e) { e.stopPropagation(); },
+        style: {
+          background: C.bg, border: "1px solid " + C.borderHi, borderRadius: 4,
+          padding: 18, width: 420, maxWidth: "90vw", display: "flex", flexDirection: "column", gap: 10,
+        },
+      },
+        React.createElement("span", { className: "rex-chrome", style: { fontSize: 11, color: C.accent, letterSpacing: "0.24em" } }, "EDIT CARD"),
+        React.createElement("input", {
+          type: "text", value: title, onChange: function (e) { setTitle(e.target.value); },
+          style: { background: C.surfaceLo, color: C.text, border: "1px solid " + C.border, padding: "6px 8px", fontFamily: FONT.mono, fontSize: 12 },
+        }),
+        React.createElement("input", {
+          type: "text", value: tag, placeholder: "tag", onChange: function (e) { setTag(e.target.value); },
+          style: { background: C.surfaceLo, color: C.textDim, border: "1px solid " + C.border, padding: "4px 8px", fontFamily: FONT.mono, fontSize: 11 },
+        }),
+        React.createElement("div", { style: { display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 6 } },
+          React.createElement(IconButton, { onClick: props.onClose }, "CANCEL"),
+          React.createElement(IconButton, {
+            onClick: function () { props.onSave({ title: title.trim(), tag: tag.trim() || null }); },
+            style: { borderColor: C.success, color: C.success },
+          }, "SAVE"),
+        ),
+      ),
+    );
   }
   function SettingsPage() {
     return React.createElement("div", { style: { padding: 24, color: C.textDim, fontFamily: FONT.mono } }, "Settings tab — placeholder");
@@ -1413,6 +1559,15 @@
     useEffect(function () {
       try { localStorage.setItem("rex-loop:active-tab", tab); } catch (_e) {}
     }, [tab]);
+
+    useEffect(function () {
+      function onJump() {
+        setTab("overview");
+        // The OverviewPage will pick up the requested mission from localStorage on the next mount
+      }
+      window.addEventListener("rex-loop:jump-to-overview", onJump);
+      return function () { window.removeEventListener("rex-loop:jump-to-overview", onJump); };
+    }, []);
 
     const ActivePage = (TABS.find(function (t) { return t.id === tab; }) || TABS[0]).Page;
 
