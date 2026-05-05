@@ -158,3 +158,35 @@ def scrape_all(*, sessions_dir: Path, totals_path: Path) -> dict:
     data["last_scraped_at"] = datetime.now(timezone.utc).isoformat()
     totals_path.write_text(json.dumps(data, indent=2, sort_keys=True))
     return data
+
+
+def by_hour(*, sessions_dir: Path, window_hours: int = 24) -> list[dict]:
+    """Bucket session token usage into hour bins for the last window_hours."""
+    sessions_dir = Path(sessions_dir)
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    buckets = [
+        {"hour": (now - timedelta(hours=window_hours - 1 - i)).isoformat(), "in": 0, "out": 0}
+        for i in range(window_hours)
+    ]
+    cutoff = now - timedelta(hours=window_hours - 1)
+    if not sessions_dir.exists():
+        return buckets
+    for p in sessions_dir.glob("session_*.json"):
+        try:
+            sess = json.loads(p.read_text())
+        except Exception:
+            continue
+        s = sess.get("session_start") or ""
+        try:
+            dt = datetime.fromisoformat(s.replace("Z", "+00:00")).astimezone(timezone.utc)
+        except Exception:
+            continue
+        if dt < cutoff or dt > now + timedelta(hours=1):
+            continue
+        idx = int((dt - cutoff).total_seconds() // 3600)
+        if not (0 <= idx < window_hours):
+            continue
+        ti, to = sum_session_tokens(sess)
+        buckets[idx]["in"] += ti
+        buckets[idx]["out"] += to
+    return buckets

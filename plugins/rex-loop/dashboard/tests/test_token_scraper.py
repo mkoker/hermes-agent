@@ -122,3 +122,22 @@ def test_scrape_all_is_incremental(tmp_path):
     _make_session(tmp_path, "b", "claude", [{"role": "assistant", "usage": {"input_tokens": 200, "output_tokens": 100}}])
     r3 = scrape_all(sessions_dir=tmp_path / "sessions", totals_path=totals_path)
     assert r3["lifetime_total_in"] == 300
+
+from datetime import datetime, timedelta, timezone
+
+
+def test_by_hour_aggregates_24h_window(tmp_path):
+    from token_scraper import by_hour
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    s_recent = (now - timedelta(hours=2)).isoformat()
+    s_old = (now - timedelta(hours=30)).isoformat()
+    _make_session(tmp_path, "x", "claude",
+                  [{"role": "assistant", "usage": {"input_tokens": 50, "output_tokens": 20}}],
+                  started=s_recent)
+    _make_session(tmp_path, "y", "claude",
+                  [{"role": "assistant", "usage": {"input_tokens": 999, "output_tokens": 999}}],
+                  started=s_old)
+    buckets = by_hour(sessions_dir=tmp_path / "sessions", window_hours=24)
+    assert len(buckets) == 24
+    matching = [b for b in buckets if b["in"] == 50 and b["out"] == 20]
+    assert len(matching) == 1
