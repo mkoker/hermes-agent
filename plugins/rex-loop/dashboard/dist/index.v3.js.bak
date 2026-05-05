@@ -1,0 +1,446 @@
+/**
+ * Rex Loop Dashboard Plugin — cockpit v3 (inline styles, no Tailwind purge dependency)
+ */
+(function () {
+  "use strict";
+
+  const SDK = window.__HERMES_PLUGIN_SDK__;
+  const PLUGINS = window.__HERMES_PLUGINS__;
+  if (!SDK || !PLUGINS) return;
+
+  const { React } = SDK;
+  const { useState, useEffect, useCallback, useRef } = SDK.hooks;
+  const BASE = "/api/plugins/rex-loop";
+
+  function api(path, opts) { return SDK.fetchJSON(BASE + path, opts || {}); }
+
+  // Inject keyframes once
+  if (typeof document !== "undefined" && !document.getElementById("rex-loop-css")) {
+    const s = document.createElement("style");
+    s.id = "rex-loop-css";
+    s.textContent = `
+      @keyframes rex-pulse { 0%,100%{opacity:1}50%{opacity:.35} }
+      @keyframes rex-blink { 0%,49%{opacity:1}50%,100%{opacity:0} }
+      @keyframes rex-scan {
+        0%{background-position:0 -200px}100%{background-position:0 200px}
+      }
+      @keyframes rex-shimmer {
+        0%{background-position:-200% 0}100%{background-position:200% 0}
+      }
+      .rex-btn:hover { background:rgba(64,200,255,.18) !important; box-shadow:0 0 12px rgba(64,200,255,.4); }
+      .rex-stream::-webkit-scrollbar { width:6px; }
+      .rex-stream::-webkit-scrollbar-thumb { background:rgba(64,200,255,.3); }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const FONT_DISPLAY = "var(--theme-font-display, 'Mondwest', ui-monospace, 'JetBrains Mono', monospace)";
+  const FONT_MONO    = "var(--theme-font-mono, ui-monospace, 'JetBrains Mono', monospace)";
+  const COLOR = {
+    cyan:  "#3fd3ff",
+    green: "#4ade80",
+    amber: "#ffce3a",
+    red:   "#ff3a5e",
+    gray:  "rgba(255,255,255,.5)",
+    white: "#ffffff",
+  };
+  const STATUS = {
+    active:  { color: COLOR.cyan,  pulse: true },
+    paused:  { color: COLOR.amber, pulse: false },
+    done:    { color: COLOR.green, pulse: false },
+    killed:  { color: COLOR.red,   pulse: true },
+    expired: { color: COLOR.amber, pulse: false },
+    missing: { color: COLOR.gray,  pulse: false },
+  };
+
+  // ---------- styled primitives ----------
+  function Panel(props) {
+    const accent = props.accent || COLOR.cyan;
+    return React.createElement("div", {
+      style: {
+        position: "relative",
+        background: "linear-gradient(180deg, rgba(10,18,28,.85) 0%, rgba(8,14,22,.95) 100%)",
+        border: "1px solid " + accent + "55",
+        borderTop: "1px solid " + accent + "aa",
+        boxShadow: "0 0 24px " + accent + "26, inset 0 0 24px " + accent + "0c",
+        clipPath: "polygon(12px 0, 100% 0, 100% calc(100% - 12px), calc(100% - 12px) 100%, 0 100%, 0 12px)",
+        padding: "14px 16px",
+        color: COLOR.white,
+        ...(props.style || {}),
+      },
+    }, props.children);
+  }
+
+  function StatusPill(props) {
+    const s = STATUS[props.status] || STATUS.missing;
+    return React.createElement("span", {
+      style: {
+        display: "inline-flex", alignItems: "center", gap: 6,
+        fontSize: ".55rem", fontWeight: 700,
+        letterSpacing: ".2em", textTransform: "uppercase",
+        padding: "3px 10px",
+        border: "1px solid " + s.color + "aa",
+        background: s.color + "10",
+        color: s.color,
+      },
+    },
+      React.createElement("span", {
+        style: {
+          width: 7, height: 7, borderRadius: "50%",
+          background: s.color, boxShadow: "0 0 6px " + s.color,
+          animation: s.pulse ? "rex-pulse 1.5s ease-in-out infinite" : "none",
+        },
+      }),
+      props.status,
+    );
+  }
+
+  function BigStat(props) {
+    return React.createElement("div", {
+      style: {
+        display: "flex", flexDirection: "column", gap: 4,
+        borderLeft: "1px solid " + props.color + "44",
+        paddingLeft: 10, minWidth: 0,
+      },
+    },
+      React.createElement("span", {
+        style: { opacity: .55, fontSize: ".55rem", letterSpacing: ".18em",
+                 textTransform: "uppercase", fontFamily: FONT_DISPLAY },
+      }, props.label),
+      React.createElement("span", {
+        style: {
+          fontFamily: FONT_DISPLAY,
+          fontVariantNumeric: "tabular-nums",
+          fontSize: "1.5rem", fontWeight: 700, lineHeight: 1,
+          color: props.color, letterSpacing: ".05em",
+          textShadow: "0 0 12px " + props.color + "60",
+        },
+      },
+        props.primary != null ? String(props.primary) : "—",
+        props.secondary != null && React.createElement("span", {
+          style: { fontSize: ".75rem", opacity: .5, marginLeft: 4 },
+        }, "/" + props.secondary),
+      ),
+    );
+  }
+
+  function ActionBtn(props) {
+    return React.createElement("button", {
+      className: "rex-btn",
+      onClick: props.onClick,
+      style: {
+        fontFamily: FONT_DISPLAY,
+        fontSize: ".6rem", letterSpacing: ".2em", textTransform: "uppercase",
+        padding: "6px 14px",
+        border: "1px solid " + props.color + "88",
+        background: "transparent",
+        color: props.color, fontWeight: 700,
+        cursor: "pointer",
+        clipPath: "polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%)",
+        transition: "all 200ms",
+      },
+    }, props.label);
+  }
+
+  function ProgressBar(props) {
+    const total = props.tasks_total || 0;
+    const done = props.tasks_done || 0;
+    const failed = props.tasks_failed || 0;
+    const cells = 40;
+    const out = [];
+    const doneCells = total ? Math.round((done / total) * cells) : 0;
+    const failCells = total ? Math.round((failed / total) * cells) : 0;
+    for (let i = 0; i < cells; i++) {
+      let bg = "rgba(255,255,255,.04)", glow = "none";
+      if (i < doneCells) { bg = COLOR.green; glow = "0 0 4px " + COLOR.green; }
+      else if (i < doneCells + failCells) { bg = COLOR.red; glow = "0 0 4px " + COLOR.red; }
+      out.push(React.createElement("span", {
+        key: i,
+        style: { flex: 1, height: 12, background: bg, boxShadow: glow,
+                 clipPath: "polygon(2px 0, 100% 0, calc(100% - 2px) 100%, 0 100%)",
+                 transition: "background 250ms, box-shadow 250ms" },
+      }));
+    }
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return React.createElement("div", {
+      style: { display: "flex", flexDirection: "column", gap: 4 },
+    },
+      React.createElement("div", {
+        style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+      },
+        React.createElement("span", {
+          style: { opacity: .55, fontSize: ".55rem", letterSpacing: ".18em",
+                   textTransform: "uppercase", fontFamily: FONT_DISPLAY },
+        }, "completion"),
+        React.createElement("span", {
+          style: { fontFamily: FONT_DISPLAY, fontVariantNumeric: "tabular-nums",
+                   fontSize: ".95rem", fontWeight: 700, letterSpacing: ".1em",
+                   color: COLOR.green },
+        }, String(pct).padStart(3, "0") + "%"),
+      ),
+      React.createElement("div", { style: { display: "flex", gap: 1 } }, out),
+    );
+  }
+
+  function MissionCard(props) {
+    const m = props.m;
+    const onAction = props.onAction;
+    const accent = (STATUS[m.status] || STATUS.missing).color;
+    const isRecurring = (m.tasks_total || 0) === 0;
+
+    return React.createElement(Panel, {
+      accent: accent,
+      style: { marginBottom: 14, fontFamily: FONT_DISPLAY, fontSize: ".65rem",
+               letterSpacing: ".1em", textTransform: "uppercase",
+               display: "flex", flexDirection: "column", gap: 12 },
+    },
+      // Header
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 },
+      },
+        React.createElement("div", {
+          style: { display: "flex", flexDirection: "column", gap: 4, minWidth: 0 },
+        },
+          React.createElement("span", {
+            style: { opacity: .4, fontSize: ".5rem", letterSpacing: ".22em" },
+          }, isRecurring ? "recurring mission" : "mission"),
+          React.createElement("span", {
+            style: { fontSize: "1rem", fontWeight: 700, letterSpacing: ".16em", color: COLOR.white },
+          }, m.name),
+        ),
+        React.createElement(StatusPill, { status: m.status }),
+      ),
+      // Stats — different for recurring vs plan-driven
+      isRecurring
+        ? React.createElement("div", {
+            style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 },
+          },
+            React.createElement(BigStat, { label: "type", primary: "DAILY", color: COLOR.cyan }),
+            React.createElement(BigStat, { label: "last fire", primary: m.last_tick_ts ? m.last_tick_ts.slice(0,8) : "—", color: COLOR.amber }),
+          )
+        : React.createElement(React.Fragment, null,
+            React.createElement("div", {
+              style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 16 },
+            },
+              React.createElement(BigStat, { label: "tasks", primary: m.tasks_done, secondary: m.tasks_total, color: COLOR.green }),
+              React.createElement(BigStat, { label: "fail",  primary: m.tasks_failed, color: m.tasks_failed ? COLOR.red : COLOR.gray }),
+              React.createElement(BigStat, { label: "days",  primary: m.days_remaining != null ? m.days_remaining : "—", color: COLOR.cyan }),
+              React.createElement(BigStat, { label: "tick",  primary: m.last_tick_ts ? m.last_tick_ts.slice(9,13) : "—", color: COLOR.amber }),
+            ),
+            React.createElement(ProgressBar, m),
+          ),
+      // Current task
+      m.current_task && React.createElement("div", {
+        style: { padding: "8px 10px", background: accent + "10",
+                 borderLeft: "2px solid " + accent,
+                 fontFamily: FONT_MONO, fontSize: ".7rem", color: COLOR.white,
+                 opacity: .85, textTransform: "none", letterSpacing: 0,
+                 whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" },
+      }, m.current_task),
+      // Buttons
+      React.createElement("div", {
+        style: { display: "flex", gap: 8, justifyContent: "flex-end" },
+      },
+        React.createElement(ActionBtn, { color: COLOR.cyan, label: "▶ fire",
+          onClick: function () { onAction("fire", m.name); } }),
+        m.status === "active"
+          ? React.createElement(ActionBtn, { color: COLOR.amber, label: "❚❚ pause",
+              onClick: function () { onAction("pause", m.name); } })
+          : React.createElement(ActionBtn, { color: COLOR.green, label: "▶ resume",
+              onClick: function () { onAction("resume", m.name); } }),
+      ),
+    );
+  }
+
+  // ---------- tick stream ----------
+  function tickColor(line) {
+    if (/task marked done/i.test(line)) return COLOR.green;
+    if (/FAIL|exit=1|exit=2|paused/i.test(line)) return COLOR.red;
+    if (/skipping|skip/i.test(line)) return COLOR.gray;
+    if (/tick start|gate exit=0/i.test(line)) return COLOR.cyan;
+    if (/dispatch|auto-push/i.test(line)) return "#ffb84a";
+    if (/sent id=/i.test(line)) return COLOR.amber;
+    return "rgba(255,255,255,.7)";
+  }
+
+  function tickIcon(line) {
+    if (/task marked done/i.test(line)) return "✓";
+    if (/FAIL|exit=1|exit=2/i.test(line)) return "✗";
+    if (/skipping|skip/i.test(line)) return "—";
+    if (/tick start/i.test(line)) return "▶";
+    if (/dispatch/i.test(line)) return "⟳";
+    if (/gate/i.test(line)) return "◆";
+    if (/sent id=/i.test(line)) return "✉";
+    if (/auto-push/i.test(line)) return "↑";
+    if (/tick end/i.test(line)) return "■";
+    return "·";
+  }
+
+  function CronStream(props) {
+    const lines = props.lines || [];
+    const ref = useRef(null);
+    useEffect(function () {
+      if (ref.current) ref.current.scrollTop = ref.current.scrollHeight;
+    }, [lines]);
+    return React.createElement(Panel, {
+      accent: COLOR.cyan,
+      style: { height: 600, display: "flex", flexDirection: "column", gap: 10,
+               fontFamily: FONT_DISPLAY, fontSize: ".65rem",
+               letterSpacing: ".1em", textTransform: "uppercase" },
+    },
+      React.createElement("div", {
+        style: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
+      },
+        React.createElement("span", {
+          style: { fontSize: ".75rem", fontWeight: 700, letterSpacing: ".2em", color: COLOR.cyan },
+        }, "▌ tick stream"),
+        React.createElement("span", {
+          style: { opacity: .55, fontSize: ".55rem", letterSpacing: ".18em" },
+        }, lines.length + " events"),
+      ),
+      React.createElement("div", {
+        ref: ref,
+        className: "rex-stream",
+        style: { flex: 1, overflow: "auto",
+                 fontFamily: FONT_MONO, fontSize: ".7rem",
+                 textTransform: "none", letterSpacing: 0, lineHeight: 1.5,
+                 background: "rgba(0,0,0,.3)",
+                 border: "1px solid " + COLOR.cyan + "22",
+                 padding: "8px 10px" },
+      },
+        lines.length === 0
+          ? React.createElement("div", { style: { opacity: .4 } }, "// no ticks yet")
+          : lines.map(function (line, i) {
+              const c = tickColor(line);
+              return React.createElement("div", {
+                key: i,
+                style: { display: "flex", gap: 8, color: c,
+                         whiteSpace: "pre-wrap", wordBreak: "break-word" },
+              },
+                React.createElement("span", {
+                  style: { width: 14, flexShrink: 0, opacity: .85,
+                           textShadow: "0 0 4px " + c },
+                }, tickIcon(line)),
+                React.createElement("span", null, line),
+              );
+            }),
+      ),
+    );
+  }
+
+  // ---------- root ----------
+  function RexLoopPage() {
+    const [missions, setMissions] = useState([]);
+    const [lines, setLines] = useState([]);
+    const [err, setErr] = useState(null);
+    const [now, setNow] = useState(new Date());
+    const [tickCount, setTickCount] = useState(0);
+
+    const refresh = useCallback(function () {
+      Promise.all([api("/missions"), api("/cron-stream?tail=120")])
+        .then(function (results) {
+          setMissions(results[0] || []);
+          setLines((results[1] && results[1].lines) || []);
+          setErr(null);
+          setTickCount(function (n) { return n + 1; });
+        })
+        .catch(function (e) { setErr(String(e.message || e)); });
+    }, []);
+
+    useEffect(function () {
+      refresh();
+      const id = setInterval(refresh, 5000);
+      const clk = setInterval(function () { setNow(new Date()); }, 1000);
+      return function () { clearInterval(id); clearInterval(clk); };
+    }, [refresh]);
+
+    const onAction = useCallback(function (action, name) {
+      api("/missions/" + name + "/" + action, { method: "POST" })
+        .then(function () { setTimeout(refresh, 250); })
+        .catch(function (e) { setErr(String(e.message || e)); });
+    }, [refresh]);
+
+    const active = missions.filter(function (m) { return m.status === "active"; }).length;
+    const paused = missions.filter(function (m) { return m.status === "paused"; }).length;
+    const done = missions.reduce(function (s, m) { return s + (m.tasks_done || 0); }, 0);
+    const total = missions.reduce(function (s, m) { return s + (m.tasks_total || 0); }, 0);
+
+    return React.createElement("div", {
+      style: { padding: "1.5rem 1.75rem",
+               display: "flex", flexDirection: "column", gap: 14,
+               fontFamily: FONT_DISPLAY, color: COLOR.white,
+               background: "radial-gradient(circle at 20% 0%, rgba(64,200,255,.08) 0%, transparent 50%), radial-gradient(circle at 80% 100%, rgba(74,222,128,.05) 0%, transparent 50%)" },
+    },
+      // Title bar
+      React.createElement("div", {
+        style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
+      },
+        React.createElement("div", {
+          style: { display: "flex", flexDirection: "column", gap: 4 },
+        },
+          React.createElement("span", {
+            style: { opacity: .55, fontSize: ".55rem", letterSpacing: ".22em",
+                     textTransform: "uppercase" },
+          }, "// automation control suite v1"),
+          React.createElement("span", {
+            style: { fontSize: "1.8rem", fontWeight: 700, letterSpacing: ".22em",
+                     color: COLOR.white,
+                     textShadow: "0 0 20px " + COLOR.cyan + "80" },
+          }, "REX  LOOP"),
+        ),
+        React.createElement("div", {
+          style: { display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 },
+        },
+          React.createElement("span", {
+            style: { fontFamily: FONT_DISPLAY, fontVariantNumeric: "tabular-nums",
+                     fontSize: "1.2rem", fontWeight: 700, letterSpacing: ".15em",
+                     color: COLOR.cyan,
+                     textShadow: "0 0 12px " + COLOR.cyan + "60" },
+          }, now.toISOString().slice(11, 19) + " Z"),
+          React.createElement("span", {
+            style: { opacity: .55, fontSize: ".55rem", letterSpacing: ".22em",
+                     textTransform: "uppercase" },
+          }, "auto-refresh 5s · sync ok · tick #" + tickCount),
+        ),
+      ),
+      // Error
+      err && React.createElement(Panel, {
+        accent: COLOR.red,
+        style: { color: COLOR.red, fontFamily: FONT_MONO, fontSize: ".7rem",
+                 textTransform: "none", letterSpacing: 0 },
+      }, "// error: " + err),
+      // Header bar
+      React.createElement(Panel, {
+        accent: COLOR.cyan,
+        style: { display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 24 },
+      },
+        React.createElement(BigStat, { label: "fleet",  primary: missions.length, color: COLOR.cyan }),
+        React.createElement(BigStat, { label: "active", primary: active,           color: COLOR.green }),
+        React.createElement(BigStat, { label: "paused", primary: paused,           color: COLOR.amber }),
+        React.createElement(BigStat, { label: "tasks",  primary: done, secondary: total, color: COLOR.green }),
+        React.createElement(BigStat, { label: "events", primary: lines.length,     color: COLOR.amber }),
+      ),
+      // Two-column grid
+      React.createElement("div", {
+        style: { display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 14 },
+      },
+        React.createElement("div", null,
+          missions.length === 0
+            ? React.createElement(Panel, null,
+                React.createElement("span", {
+                  style: { opacity: .5, fontSize: ".65rem", letterSpacing: ".1em",
+                           textTransform: "uppercase" },
+                }, "no missions found in ~/.hermes/missions/"),
+              )
+            : missions.map(function (m) {
+                return React.createElement(MissionCard, { key: m.name, m: m, onAction: onAction });
+              }),
+        ),
+        React.createElement(CronStream, { lines: lines }),
+      ),
+    );
+  }
+
+  PLUGINS.register("rex-loop", RexLoopPage);
+  console.log("[rex-loop] registered (cockpit v3 inline)");
+})();
