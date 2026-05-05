@@ -28,8 +28,66 @@
   function api(path, opts) { return SDK.fetchJSON(BASE + path, opts || {}); }
 
   // ============================================================================
-  // 1. CONSTANTS  (filled in by Task B1)
+  // 1. CONSTANTS
   // ============================================================================
+  const C = {
+    bg:        "#000814",
+    surface:   "rgba(0,29,61,0.45)",
+    surfaceLo: "rgba(0,29,61,0.20)",
+    border:    "#082545",
+    borderHi:  "#103a6b",
+
+    accent:    "#ffd60a",  // primary — yellow, mission control
+    success:   "#06d6a0",
+    error:     "#e63946",
+    info:      "#79c2ff",
+    muted:     "#5a7a9a",
+    pmAccent:  "#b76dff",  // PM purple — only for PM-related UI
+
+    text:      "#e6f0ff",
+    textDim:   "#7a90ad",
+  };
+
+  const FONT = {
+    chrome: "Inter, system-ui, -apple-system, sans-serif",
+    mono:   "ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, monospace",
+  };
+
+  const POLL = {
+    missions:      10000,  // 10s
+    ticks:         10000,  // 10s when a mission is selected
+    tokensTodayBy:  30000, // 30s for /tokens/today + /tokens/by-role
+    tokensByHour: 300000,  // 5min for /tokens/by-hour
+    cronStream:     3000,  // 3s incremental tail
+    tickfile:       3000,  // 3s when a tick is live
+    pmStatus:       3000,  // 3s during scoping
+  };
+
+  const TZ = (function () {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "America/New_York"; }
+    catch (_e) { return "America/New_York"; }
+  })();
+
+  // Inject keyframes + utility classes once
+  if (typeof document !== "undefined" && !document.getElementById("rex-warroom-css")) {
+    const s = document.createElement("style");
+    s.id = "rex-warroom-css";
+    s.textContent = `
+      @keyframes rex-pulse  { 0%,100%{opacity:1}50%{opacity:.4} }
+      @keyframes rex-blink  { 0%,49%{opacity:1}50%,100%{opacity:0} }
+      @keyframes rex-glow   { 0%,100%{box-shadow:0 0 0 0 ${C.accent}66} 50%{box-shadow:0 0 0 4px ${C.accent}11} }
+      @keyframes rex-slide  { from{transform:translateY(4px);opacity:0} to{transform:translateY(0);opacity:1} }
+      .rex-mono { font-family: ${FONT.mono}; }
+      .rex-chrome { font-family: ${FONT.chrome}; letter-spacing:.18em; text-transform:uppercase; }
+      .rex-pulse-yellow { animation: rex-glow 1.6s ease-in-out infinite; }
+      .rex-row-enter { animation: rex-slide .25s ease-out; }
+      .rex-scroll::-webkit-scrollbar { width:6px; height:6px; }
+      .rex-scroll::-webkit-scrollbar-thumb { background:${C.border}; border-radius:3px; }
+      .rex-scroll::-webkit-scrollbar-thumb:hover { background:${C.borderHi}; }
+      .rex-scroll::-webkit-scrollbar-track { background:transparent; }
+    `;
+    document.head.appendChild(s);
+  }
 
   // ============================================================================
   // 2. UTILITIES  (filled in by Task B2)
