@@ -1133,5 +1133,5 @@
   // 9. REGISTER
   // ============================================================================
   PLUGINS.register("rex-loop", RexLoopPage);
-  console.log("[rex-loop] registered (war-room v4 skeleton)");
+  console.log("[rex-loop] registered (war-room v4)");
 })();

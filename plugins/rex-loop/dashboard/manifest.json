@@ -1,0 +1,14 @@
+{
+  "name": "rex-loop",
+  "label": "Rex Loop",
+  "description": "Live status, progress, and controls for Rex's autonomous loop missions",
+  "icon": "Activity",
+  "version": "2.0.0",
+  "tab": {
+    "path": "/rex-loop",
+    "position": "after:sessions"
+  },
+  "slots": [],
+  "entry": "dist/index.js",
+  "api": "plugin_api.py"
+}
