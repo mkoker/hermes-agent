@@ -724,6 +724,91 @@
     );
   }
 
+  // ---------- TickFileViewer ----------
+  function SectionHeader(props) {
+    const { role, expanded, onToggle, isActive } = props;
+    return React.createElement("button", {
+      onClick: onToggle,
+      style: {
+        width: "100%", textAlign: "left",
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "8px 10px",
+        background: isActive ? C.accent + "11" : "transparent",
+        border: "1px solid " + (isActive ? C.accent + "55" : C.border),
+        borderRadius: 2, cursor: "pointer",
+        color: isActive ? C.accent : C.text, fontFamily: FONT.chrome, fontSize: 11, letterSpacing: "0.18em", textTransform: "uppercase", fontWeight: 700,
+      },
+    },
+      React.createElement("span", null, (expanded ? "▾ " : "▸ ") + role),
+      isActive ? React.createElement("span", { className: "rex-mono", style: { fontSize: 9, letterSpacing: "0.2em" } }, "ACTIVE") : null,
+    );
+  }
+
+  function TickFileViewer(props) {
+    const tickfile = props.tickfile;
+    const [collapsed, setCollapsed] = useState({}); // {role: bool}
+
+    const sections = (tickfile && tickfile.sections) || [];
+    const activeIdx = sections.length - 1; // last section is the most recent / running
+
+    function isExpanded(i) {
+      const role = sections[i].role;
+      // Default: active section expanded, others collapsed unless explicitly toggled
+      const explicit = collapsed[role];
+      if (explicit != null) return !explicit;
+      return i === activeIdx;
+    }
+
+    function toggle(i) {
+      const role = sections[i].role;
+      setCollapsed(function (c) {
+        const cur = c[role];
+        const wasExpanded = cur != null ? !cur : (i === activeIdx);
+        return Object.assign({}, c, { [role]: wasExpanded ? true : false });
+      });
+    }
+
+    if (!tickfile) {
+      return React.createElement(Panel, null,
+        React.createElement("span", { className: "rex-mono", style: { color: C.textDim, fontSize: 11 } }, "no tick file loaded"),
+      );
+    }
+
+    if (sections.length === 0) {
+      return React.createElement(Panel, null,
+        React.createElement("span", { className: "rex-mono", style: { color: C.textDim, fontSize: 11 } }, "tick file is empty"),
+      );
+    }
+
+    return React.createElement(Panel, { padding: 8, style: { display: "flex", flexDirection: "column", gap: 6 } },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", padding: "0 4px 4px" } },
+        React.createElement("span", { className: "rex-chrome", style: { fontSize: 9, color: C.textDim, letterSpacing: "0.22em" } },
+          "TICK FILE · " + (tickfile.path || "").split("/").slice(-3).join("/")),
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 9, color: C.textDim } },
+          tickfile.size != null ? (tickfile.size + " bytes") : ""),
+      ),
+      sections.map(function (s, i) {
+        const expanded = isExpanded(i);
+        return React.createElement("div", { key: s.role + ":" + i, style: { display: "flex", flexDirection: "column", gap: 4 } },
+          React.createElement(SectionHeader, {
+            role: s.role, expanded: expanded, isActive: i === activeIdx,
+            onToggle: function () { toggle(i); },
+          }),
+          expanded ? React.createElement("pre", {
+            className: "rex-mono rex-scroll",
+            style: {
+              margin: 0, padding: "8px 10px",
+              background: C.surfaceLo, border: "1px solid " + C.border, borderRadius: 2,
+              fontSize: 11, lineHeight: 1.5, color: C.text,
+              maxHeight: 320, overflow: "auto",
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+            },
+          }, s.body || "(empty)") : null,
+        );
+      }),
+    );
+  }
+
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
   // ============================================================================
