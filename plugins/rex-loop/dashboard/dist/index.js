@@ -590,6 +590,140 @@
     );
   }
 
+  // ---------- AgentPanel ----------
+  const PIPELINE_STAGES = ["researcher", "planner", "coder", "tester"];
+
+  function StageBadge(props) {
+    // {stage, state, elapsed}
+    const ICONS = { done: "✓", running: "▶", pending: "—", failed: "✗" };
+    const COLORS = { done: C.success, running: C.accent, pending: C.muted, failed: C.error };
+    const c = COLORS[props.state] || C.muted;
+    const isActive = props.state === "running";
+    return React.createElement("div", {
+      className: isActive ? "rex-pulse-yellow" : null,
+      style: {
+        flex: 1,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+        padding: "10px 8px",
+        background: isActive ? C.accent + "11" : "transparent",
+        border: "1px solid " + c + "44",
+        borderRadius: 2,
+      },
+    },
+      React.createElement("span", { className: "rex-chrome", style: { fontSize: 10, color: c, fontWeight: 700, letterSpacing: "0.22em" } }, props.stage.toUpperCase()),
+      React.createElement("span", { className: "rex-mono", style: { fontSize: 16, color: c } }, ICONS[props.state] || "—"),
+      React.createElement("span", { className: "rex-mono", style: { fontSize: 9, color: C.textDim } }, props.elapsed != null ? fmtDuration(props.elapsed) : "—"),
+    );
+  }
+
+  function PipelineStrip(props) {
+    const stages = props.stages || {}; // { researcher: {state, elapsed}, ... }
+    return React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, padding: "8px 0" },
+    },
+      PIPELINE_STAGES.map(function (s) {
+        const info = stages[s] || { state: "pending" };
+        return React.createElement(StageBadge, {
+          key: s, stage: s, state: info.state, elapsed: info.elapsed,
+        });
+      }),
+    );
+  }
+
+  function HandoffBadges(props) {
+    // Renders summary cards between stages: researcher.sources -> planner.steps -> coder.progress -> tester.gates
+    const handoffs = props.handoffs || {};
+    function Pill(p) {
+      return React.createElement("div", {
+        style: {
+          padding: "6px 8px", border: "1px dashed " + C.border, borderRadius: 2,
+          color: C.textDim, fontFamily: FONT.mono, fontSize: 10, minWidth: 0,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        },
+      }, p.label + ": " + (p.value == null ? "—" : p.value));
+    }
+    return React.createElement("div", {
+      style: { display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 },
+    },
+      React.createElement(Pill, { label: "src", value: handoffs.sources_count }),
+      React.createElement(Pill, { label: "steps", value: handoffs.planner_steps }),
+      React.createElement(Pill, { label: "progress", value: handoffs.coder_progress }),
+      React.createElement(Pill, { label: "gates", value: handoffs.tester_gates }),
+    );
+  }
+
+  // Parse a tick file into per-stage info {state, elapsed} from sections
+  function parseTickStages(tickfile) {
+    const stages = { researcher: { state: "pending" }, planner: { state: "pending" }, coder: { state: "pending" }, tester: { state: "pending" } };
+    if (!tickfile || !tickfile.sections) return stages;
+    const sections = tickfile.sections;
+    const startedAt = (s) => s && s.started_at ? new Date(s.started_at).getTime() : null;
+    const endedAt   = (s) => s && s.ended_at ? new Date(s.ended_at).getTime() : null;
+    sections.forEach(function (sect, i) {
+      const role = (sect.role || "").toLowerCase();
+      if (!stages[role]) return;
+      const isLast = i === sections.length - 1;
+      const ended = endedAt(sect);
+      stages[role].state = ended ? "done" : (isLast ? "running" : "done");
+      const start = startedAt(sect);
+      const stop = ended || Date.now();
+      if (start) stages[role].elapsed = Math.floor((stop - start) / 1000);
+    });
+    return stages;
+  }
+
+  function summarizeHandoffs(tickfile) {
+    if (!tickfile || !tickfile.sections) return {};
+    const out = {};
+    tickfile.sections.forEach(function (s) {
+      const r = (s.role || "").toLowerCase();
+      const body = s.body || "";
+      if (r === "researcher") {
+        const links = (body.match(/^https?:\/\//gm) || []).length;
+        out.sources_count = links;
+      } else if (r === "planner") {
+        out.planner_steps = (body.match(/^- \[ \]/gm) || []).length + (body.match(/^- \[x\]/gmi) || []).length;
+      } else if (r === "coder") {
+        const done = (body.match(/^- \[x\]/gmi) || []).length;
+        const total = done + (body.match(/^- \[ \]/gm) || []).length;
+        out.coder_progress = total ? done + "/" + total : null;
+      } else if (r === "tester") {
+        out.tester_gates = (body.match(/GATE/g) || []).length;
+      }
+    });
+    return out;
+  }
+
+  function AgentPanel(props) {
+    const { mission, tickfile, loadingTick } = props;
+    const stages = useMemo(function () { return parseTickStages(tickfile); }, [tickfile]);
+    const handoffs = useMemo(function () { return summarizeHandoffs(tickfile); }, [tickfile]);
+
+    if (!mission || !mission.current_tick || mission.current_tick.state !== "running") {
+      // Idle banner is rendered by the parent OverviewPage; AgentPanel only renders during a live tick.
+      return null;
+    }
+
+    const t = mission.current_tick;
+    return React.createElement(Panel, { accent: C.accent, style: { marginBottom: 12 } },
+      React.createElement("div", { style: { display: "flex", justifyContent: "space-between", gap: 16, alignItems: "baseline" } },
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 12, color: C.text, fontWeight: 700 } },
+          mission.name + " // TICK #" + t.id +
+          (t.picked_line ? " · line " + t.picked_line : "") +
+          (t.task ? " · " + t.task : "")),
+        React.createElement("span", { className: "rex-mono", style: { fontSize: 10, color: C.textDim } },
+          t.started_at ? "started " + tzFormat(t.started_at, { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" }) : ""),
+      ),
+      React.createElement(PipelineStrip, { stages: stages }),
+      React.createElement("div", { style: { marginTop: 8 } },
+        React.createElement(HandoffBadges, { handoffs: handoffs }),
+      ),
+      loadingTick && !tickfile ? React.createElement("div", {
+        className: "rex-mono", style: { marginTop: 8, fontSize: 10, color: C.textDim },
+      }, "loading tick file...") : null,
+    );
+  }
+
   // ============================================================================
   // 7. PAGES  (filled in by Tasks B12, B13)
   // ============================================================================
